@@ -28,6 +28,7 @@ impl CharacterLog {
             time: owned_time,
             notes: notes.into(),
         });
+        self.total_characters += characters;
     }
 
     pub fn new() -> CharacterLog {
