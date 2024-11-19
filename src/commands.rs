@@ -1,6 +1,6 @@
 use crate::{model::CharacterLog, Context, Error};
 
-/// Show this help menu
+/// Show this help menu.
 #[poise::command(track_edits, slash_command)]
 pub async fn help(
     ctx: Context<'_>,
@@ -20,7 +20,9 @@ pub async fn help(
     Ok(())
 }
 
-/// Log immersion characters
+/// Log immersion characters.
+///
+/// Optionally, add a note to keep track of read materials, i.e: `/log_characters characters:4000 notes:Episode 1 of Love Live season 1`
 #[poise::command(prefix_command, slash_command)]
 pub async fn log_characters(
     ctx: Context<'_>,
@@ -28,6 +30,7 @@ pub async fn log_characters(
     #[description = "Extra information such as the title of the book or VN"] notes: Option<String>,
 ) -> Result<(), Error> {
     // Lock the Mutex in a block {} so the Mutex isn't locked across an await point
+    // ^ I have no idea what this means lmao
     let total_characters = {
         let mut hash_map = ctx.data().logs.lock().unwrap();
         let user_id = ctx.author().id;
