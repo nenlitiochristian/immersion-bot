@@ -40,17 +40,22 @@ async fn main() {
     // FrameworkOptions contains all of poise's configuration option in one struct
     // Every option can be omitted to use its default value
     let options = poise::FrameworkOptions {
-        commands: vec![commands::help(), commands::log_characters()],
+        commands: vec![
+            commands::help(),
+            commands::log_characters(),
+            commands::history(),
+            commands::usage(),
+            commands::how_to_track(),
+            commands::roles(),
+            commands::leaderboard(),
+            commands::quizzes(),
+        ],
         prefix_options: poise::PrefixFrameworkOptions {
             // commands only, no prefix messages
             prefix: None,
             edit_tracker: Some(Arc::new(poise::EditTracker::for_timespan(
                 Duration::from_secs(3600),
             ))),
-            additional_prefixes: vec![
-                poise::Prefix::Literal("hey bot,"),
-                poise::Prefix::Literal("hey bot"),
-            ],
             ..Default::default()
         },
         // The global error handler for all error cases that may occur
@@ -104,7 +109,7 @@ async fn main() {
         .options(options)
         .build();
 
-    let token = var("DISCORD_TOKEN")
+    let token: String = var("DISCORD_TOKEN")
         .expect("Missing `DISCORD_TOKEN` env var, see README for more information.");
     let intents =
         serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
