@@ -1,7 +1,9 @@
 use poise::CreateReply;
 use serenity::all::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter};
 
-use crate::{model::CharacterStatistics, Context, Error};
+use crate::{
+    model::CharacterStatistics, repository::CharacterStatisticsRepository, Context, Error,
+};
 
 /// Shows this help menu.
 #[poise::command(track_edits, slash_command)]
@@ -34,20 +36,25 @@ pub async fn log_characters(
 ) -> Result<(), Error> {
     // Lock the Mutex in a block {} so the Mutex isn't locked across an await point
     // ^ I have no idea what this means lmao
-    let total_characters = {
-        let mut hash_map = ctx.data().logs.lock().unwrap();
-        let user_id = ctx.author().id;
-        let character_log = hash_map
-            .entry(user_id)
-            .or_insert_with(|| CharacterStatistics::new());
+    let repository = &ctx.data().character_statistics_repository;
+    let user_id = ctx.author().id;
+    let time = &ctx.created_at();
+    let result = repository
+        .add_log_entry(user_id, characters, time, notes)
+        .await;
 
-        let time = ctx.created_at();
-        character_log.add_log(characters, &time, notes);
-        character_log.total_characters()
+    let data = match result {
+        Ok(data) => data,
+        Err(msg) => {
+            return Err(Error::from(msg));
+        }
     };
 
-    let response =
-        format!("Logged {characters} characters. Total characters logged: {total_characters}.");
+    let response = format!(
+        "Logged {} characters. Total characters logged: {}.",
+        characters,
+        data.total_characters()
+    );
     ctx.say(response).await?;
     Ok(())
 }
@@ -110,33 +117,39 @@ You can track characters read from manga by using [this bookmarklet](https://git
 /// Shows your latest log history.
 #[poise::command(slash_command)]
 pub async fn history(ctx: Context<'_>) -> Result<(), Error> {
-    let embed = {
-        let mut hash_map = ctx.data().logs.lock().unwrap();
-        let user_id = ctx.author().id;
-        let character_log = hash_map
-            .entry(user_id)
-            .or_insert_with(|| CharacterStatistics::new());
+    let repository = &ctx.data().character_statistics_repository;
+    let user_id = ctx.author().id;
+    let result = repository.get_statistics(user_id).await;
 
-        let mut embed_builder = CreateEmbed::default()
-            .author(CreateEmbedAuthor::new("Bread"))
-            .title(format!("Immersion Tracking Bot"));
-
-        for history in character_log.history() {
-            let notes = match history.notes() {
-                None => "-",
-                Some(x) => &x,
-            };
-            let time = history.time().format("%Y年%m月%d日");
-            embed_builder = embed_builder.field(
-                format!("<t:{}>: {} characters", time, history.characters()),
-                notes,
-                false,
-            );
+    let character_log = match result {
+        Ok(data) => match data {
+            Some(data) => data,
+            None => CharacterStatistics::new(),
+        },
+        Err(msg) => {
+            return Err(Error::from(msg));
         }
-        embed_builder
     };
 
-    ctx.send(CreateReply::default().embed(embed)).await?;
+    let mut embed_builder = CreateEmbed::default()
+        .author(CreateEmbedAuthor::new("Bread"))
+        .title(format!("Immersion Tracking Bot"));
+
+    for history in character_log.history() {
+        let notes = match history.notes() {
+            None => "-",
+            Some(x) => &x,
+        };
+        let time = history.time().format("%Y年%m月%d日");
+        embed_builder = embed_builder.field(
+            format!("<t:{}>: {} characters", time, history.characters()),
+            notes,
+            false,
+        );
+    }
+
+    ctx.send(CreateReply::default().embed(embed_builder))
+        .await?;
     Ok(())
 }
 

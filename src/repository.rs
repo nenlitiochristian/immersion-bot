@@ -1,15 +1,19 @@
-use firestore::{errors::FirestoreError, FirestoreDb};
-use serenity::{all::UserId, async_trait};
+use firestore::FirestoreDb;
+use serenity::all::{Timestamp, UserId};
 
-use crate::model::{CharacterLogEntry, CharacterStatistics};
+use crate::model::CharacterStatistics;
 
-#[async_trait::async_trait]
 pub trait CharacterStatisticsRepository {
-    async fn add_log_entry(&self, user_id: UserId, entry: CharacterLogEntry) -> Result<(), String>;
-    async fn get_statistics(
+    async fn add_log_entry(
         &self,
         user_id: UserId,
-    ) -> Result<Option<CharacterStatistics>, FirestoreError>;
+        characters: i32,
+        time: &Timestamp,
+        notes: Option<String>,
+    ) -> Result<CharacterStatistics, String>;
+
+    async fn get_statistics(&self, user_id: UserId) -> Result<Option<CharacterStatistics>, String>;
+
     /// Each page contains 15 users
     async fn fetch_paginated_top_users_by_characters(
         &self,
@@ -25,14 +29,42 @@ pub struct FirestoreCharacterStatisticsRepository {
 // users/{userId} : { total_characters: i32, history: Vec<CharacterLogEntry>}
 
 impl FirestoreCharacterStatisticsRepository {
-    fn new(firestore: FirestoreDb) -> FirestoreCharacterStatisticsRepository {
+    pub fn new(firestore: FirestoreDb) -> FirestoreCharacterStatisticsRepository {
         FirestoreCharacterStatisticsRepository { firestore }
     }
 }
 
 impl CharacterStatisticsRepository for FirestoreCharacterStatisticsRepository {
-    async fn add_log_entry(&self, user_id: UserId, entry: CharacterLogEntry) -> Result<(), String> {
-        todo!();
+    async fn add_log_entry(
+        &self,
+        user_id: UserId,
+        characters: i32,
+        time: &Timestamp,
+        notes: Option<String>,
+    ) -> Result<CharacterStatistics, String> {
+        let previous_data = self.get_statistics(user_id).await?;
+
+        let mut data = match previous_data {
+            Some(data) => data,
+            None => CharacterStatistics::new(),
+        };
+
+        data.add_log(characters, time, notes);
+
+        let result = self
+            .firestore
+            .fluent()
+            .update()
+            .in_col("users")
+            .document_id(user_id.to_string())
+            .object(&data)
+            .execute()
+            .await;
+
+        match result {
+            Err(msg) => Err(msg.to_string()),
+            Ok(data) => Ok(data),
+        }
     }
 
     async fn fetch_paginated_top_users_by_characters(
@@ -42,18 +74,19 @@ impl CharacterStatisticsRepository for FirestoreCharacterStatisticsRepository {
         todo!();
     }
 
-    async fn get_statistics(
-        &self,
-        user_id: UserId,
-    ) -> Result<Option<CharacterStatistics>, FirestoreError> {
-        let data: Option<CharacterStatistics> = self
+    async fn get_statistics(&self, user_id: UserId) -> Result<Option<CharacterStatistics>, String> {
+        let result = self
             .firestore
             .fluent()
             .select()
             .by_id_in("users")
             .obj()
-            .one(format!("{user_id}"))
-            .await?;
-        Ok(data)
+            .one(user_id.to_string())
+            .await;
+
+        match result {
+            Err(msg) => Err(msg.to_string()),
+            Ok(data) => Ok(data),
+        }
     }
 }

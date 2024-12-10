@@ -9,6 +9,7 @@ use errors::FirestoreError;
 use firestore::*;
 use model::Data;
 use poise::serenity_prelude as serenity;
+use repository::FirestoreCharacterStatisticsRepository;
 use std::{
     collections::HashMap,
     env::var,
@@ -37,7 +38,9 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
     }
 }
 
-async fn setup_discord_bot() {
+async fn setup_discord_bot(
+    character_statistics_repository: FirestoreCharacterStatisticsRepository,
+) {
     // FrameworkOptions contains all of poise's configuration option in one struct
     // Every option can be omitted to use its default value
     let options = poise::FrameworkOptions {
@@ -103,7 +106,7 @@ async fn setup_discord_bot() {
                 println!("Logged in as {}", _ready.user.name);
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
                 Ok(Data {
-                    logs: Mutex::new(HashMap::new()),
+                    character_statistics_repository,
                 })
             })
         })
@@ -144,8 +147,8 @@ async fn main() {
             );
             return;
         }
-        _ => (),
+        Ok(db) => db,
     };
 
-    setup_discord_bot().await
+    setup_discord_bot(FirestoreCharacterStatisticsRepository::new(db)).await
 }

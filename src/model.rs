@@ -4,7 +4,7 @@ use serenity::all::Timestamp;
 
 // Custom user data passed to all command functions
 pub struct Data {
-    pub repository: FirestoreCharacterStatisticsRepository,
+    pub character_statistics_repository: FirestoreCharacterStatisticsRepository,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
