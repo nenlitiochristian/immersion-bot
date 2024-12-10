@@ -1,29 +1,30 @@
-use std::{collections::HashMap, sync::Mutex};
-
-use serenity::all::{Timestamp, UserId};
+use crate::repository::FirestoreCharacterStatisticsRepository;
+use serde::{Deserialize, Serialize};
+use serenity::all::Timestamp;
 
 // Custom user data passed to all command functions
 pub struct Data {
-    pub logs: Mutex<HashMap<UserId, CharacterLog>>,
+    pub repository: FirestoreCharacterStatisticsRepository,
 }
 
-pub struct CharacterLog {
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CharacterStatistics {
     total_characters: i32,
-    log_history: Vec<CharacterLogHistory>,
+    history: Vec<CharacterLogEntry>,
 }
 
-impl CharacterLog {
+impl CharacterStatistics {
     pub fn total_characters(&self) -> i32 {
         self.total_characters
     }
 
-    pub fn log_history(&self) -> &Vec<CharacterLogHistory> {
-        &self.log_history
+    pub fn history(&self) -> &Vec<CharacterLogEntry> {
+        &self.history
     }
 
     pub fn add_log(&mut self, characters: i32, time: &Timestamp, notes: Option<String>) -> () {
         let owned_time = time.clone();
-        self.log_history.push(CharacterLogHistory {
+        self.history.push(CharacterLogEntry {
             characters,
             time: owned_time,
             notes: notes.into(),
@@ -31,21 +32,22 @@ impl CharacterLog {
         self.total_characters += characters;
     }
 
-    pub fn new() -> CharacterLog {
-        CharacterLog {
+    pub fn new() -> CharacterStatistics {
+        CharacterStatistics {
             total_characters: 0,
-            log_history: Vec::new(),
+            history: Vec::new(),
         }
     }
 }
 
-pub struct CharacterLogHistory {
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CharacterLogEntry {
     characters: i32,
     time: Timestamp,
     notes: Option<String>,
 }
 
-impl CharacterLogHistory {
+impl CharacterLogEntry {
     pub fn characters(&self) -> i32 {
         self.characters
     }

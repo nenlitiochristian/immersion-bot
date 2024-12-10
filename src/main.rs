@@ -2,6 +2,7 @@
 
 mod commands;
 mod model;
+mod repository;
 
 use dotenv::dotenv;
 use errors::FirestoreError;
@@ -133,6 +134,18 @@ async fn setup_firestore() -> Result<FirestoreDb, FirestoreError> {
 #[tokio::main]
 async fn main() {
     dotenv().ok();
-    setup_firestore().await.expect("Failed to setup firestore!");
+
+    let db_result = setup_firestore().await;
+    let db = match db_result {
+        Err(msg) => {
+            println!(
+                "Could not setup a connection to firestore due to: `{}`.",
+                msg
+            );
+            return;
+        }
+        _ => (),
+    };
+
     setup_discord_bot().await
 }

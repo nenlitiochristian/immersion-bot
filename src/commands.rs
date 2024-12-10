@@ -1,7 +1,7 @@
 use poise::CreateReply;
 use serenity::all::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter};
 
-use crate::{model::CharacterLog, Context, Error};
+use crate::{model::CharacterStatistics, Context, Error};
 
 /// Shows this help menu.
 #[poise::command(track_edits, slash_command)]
@@ -39,7 +39,7 @@ pub async fn log_characters(
         let user_id = ctx.author().id;
         let character_log = hash_map
             .entry(user_id)
-            .or_insert_with(|| CharacterLog::new());
+            .or_insert_with(|| CharacterStatistics::new());
 
         let time = ctx.created_at();
         character_log.add_log(characters, &time, notes);
@@ -115,13 +115,13 @@ pub async fn history(ctx: Context<'_>) -> Result<(), Error> {
         let user_id = ctx.author().id;
         let character_log = hash_map
             .entry(user_id)
-            .or_insert_with(|| CharacterLog::new());
+            .or_insert_with(|| CharacterStatistics::new());
 
         let mut embed_builder = CreateEmbed::default()
             .author(CreateEmbedAuthor::new("Bread"))
             .title(format!("Immersion Tracking Bot"));
 
-        for history in character_log.log_history() {
+        for history in character_log.history() {
             let notes = match history.notes() {
                 None => "-",
                 Some(x) => &x,
