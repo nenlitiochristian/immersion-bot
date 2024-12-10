@@ -4,6 +4,8 @@ mod commands;
 mod model;
 
 use dotenv::dotenv;
+use errors::FirestoreError;
+use firestore::*;
 use model::Data;
 use poise::serenity_prelude as serenity;
 use std::{
@@ -34,9 +36,7 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
     }
 }
 
-#[tokio::main]
-async fn main() {
-    dotenv().ok();
+async fn setup_discord_bot() {
     // FrameworkOptions contains all of poise's configuration option in one struct
     // Every option can be omitted to use its default value
     let options = poise::FrameworkOptions {
@@ -119,4 +119,20 @@ async fn main() {
         .await;
 
     client.unwrap().start().await.unwrap()
+}
+
+async fn setup_firestore() -> Result<FirestoreDb, FirestoreError> {
+    // Logging with debug enabled
+    // Create an instance
+    let project_id: String = var("PROJECT_ID").expect(
+        "Missing `PROJECT_ID` env var, which is required for connecting to the firestore database.",
+    );
+    FirestoreDb::new(&project_id).await
+}
+
+#[tokio::main]
+async fn main() {
+    dotenv().ok();
+    setup_firestore().await.expect("Failed to setup firestore!");
+    setup_discord_bot().await
 }
