@@ -34,10 +34,9 @@ pub async fn log_characters(
     #[description = "The amount of characters read"] characters: i32,
     #[description = "Extra information such as the title of the book or VN"] notes: Option<String>,
 ) -> Result<(), Error> {
-    // Lock the Mutex in a block {} so the Mutex isn't locked across an await point
-    // ^ I have no idea what this means lmao
-    let repository = &ctx.data().character_statistics_repository;
+    let mut repository = ctx.data().character_statistics_repository.lock().await;
     let user_id = ctx.author().id;
+
     let time = &ctx.created_at();
     let result = repository
         .add_log_entry(user_id, characters, time, notes)
@@ -52,8 +51,7 @@ pub async fn log_characters(
 
     let response = format!(
         "Logged {} characters. Total characters logged: {}.",
-        characters,
-        data.total_characters()
+        characters, data.total_characters
     );
     ctx.say(response).await?;
     Ok(())
@@ -117,15 +115,12 @@ You can track characters read from manga by using [this bookmarklet](https://git
 /// Shows your latest log history.
 #[poise::command(slash_command)]
 pub async fn history(ctx: Context<'_>) -> Result<(), Error> {
-    let repository = &ctx.data().character_statistics_repository;
+    let mut repository = ctx.data().character_statistics_repository.lock().await;
     let user_id = ctx.author().id;
-    let result = repository.get_statistics(user_id).await;
+    let result = repository.get_log_entries(user_id).await;
 
-    let character_log = match result {
-        Ok(data) => match data {
-            Some(data) => data,
-            None => CharacterStatistics::new(),
-        },
+    let log_entries = match result {
+        Ok(data) => data,
         Err(msg) => {
             return Err(Error::from(msg));
         }
@@ -135,7 +130,7 @@ pub async fn history(ctx: Context<'_>) -> Result<(), Error> {
         .author(CreateEmbedAuthor::new("Bread"))
         .title(format!("Immersion Tracking Bot"));
 
-    for history in character_log.history() {
+    for history in log_entries {
         let notes = match history.notes() {
             None => "-",
             Some(x) => &x,

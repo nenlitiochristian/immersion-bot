@@ -5,17 +5,12 @@ mod model;
 mod repository;
 
 use dotenv::dotenv;
-use errors::FirestoreError;
-use firestore::*;
 use model::Data;
 use poise::serenity_prelude as serenity;
-use repository::FirestoreCharacterStatisticsRepository;
-use std::{
-    collections::HashMap,
-    env::var,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use repository::SQLiteCharacterStatisticsRepository;
+use rusqlite::Connection;
+use std::{env::var, sync::Arc, time::Duration};
+use tokio::sync::Mutex;
 
 // Types used by all command functions
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -38,9 +33,7 @@ async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
     }
 }
 
-async fn setup_discord_bot(
-    character_statistics_repository: FirestoreCharacterStatisticsRepository,
-) {
+async fn setup_discord_bot(data: Data) {
     // FrameworkOptions contains all of poise's configuration option in one struct
     // Every option can be omitted to use its default value
     let options = poise::FrameworkOptions {
@@ -105,9 +98,7 @@ async fn setup_discord_bot(
             Box::pin(async move {
                 println!("Logged in as {}", _ready.user.name);
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(Data {
-                    character_statistics_repository,
-                })
+                Ok(data)
             })
         })
         .options(options)
@@ -125,30 +116,42 @@ async fn setup_discord_bot(
     client.unwrap().start().await.unwrap()
 }
 
-async fn setup_firestore() -> Result<FirestoreDb, FirestoreError> {
-    // Logging with debug enabled
-    // Create an instance
-    let project_id: String = var("PROJECT_ID").expect(
-        "Missing `PROJECT_ID` env var, which is required for connecting to the firestore database.",
+fn setup_sqlite_connection() -> rusqlite::Result<Connection> {
+    let connection = Connection::open_in_memory()?;
+
+    // Setup migration
+    connection.execute(
+        "
+-- Create the CharacterStatistics table
+CREATE TABLE IF NOT EXISTS CharacterStatistics (
+    user_id INTEGER PRIMARY KEY, -- the discord id of the user
+    total_characters INTEGER NOT NULL
+);
+
+-- Create the CharacterLogEntry table
+CREATE TABLE IF NOT EXISTS CharacterLogEntry (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL, -- Foreign key linking to CharacterStatistics
+    characters INTEGER NOT NULL,
+    time INTEGER NOT NULL, -- Store timestamp as Unix timestamp (64bits in SQLite)
+    notes TEXT, -- Optional field for notes
+    FOREIGN KEY (statistic_id) REFERENCES CharacterStatistics (id)
+);    
+    ",
+        (),
     );
-    FirestoreDb::new(&project_id).await
+
+    Ok(connection)
 }
 
 #[tokio::main]
 async fn main() {
     dotenv().ok();
 
-    let db_result = setup_firestore().await;
-    let db = match db_result {
-        Err(msg) => {
-            println!(
-                "Could not setup a connection to firestore due to: `{}`.",
-                msg
-            );
-            return;
-        }
-        Ok(db) => db,
+    let connection = setup_sqlite_connection().expect("Failed to open an SQLite connection!");
+    let sqlite_repository = SQLiteCharacterStatisticsRepository::new(connection);
+    let data = Data {
+        character_statistics_repository: Mutex::new(sqlite_repository),
     };
-
-    setup_discord_bot(FirestoreCharacterStatisticsRepository::new(db)).await
+    setup_discord_bot(data).await
 }

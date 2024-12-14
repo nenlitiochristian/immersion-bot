@@ -1,47 +1,38 @@
-use crate::repository::FirestoreCharacterStatisticsRepository;
+use crate::repository::SQLiteCharacterStatisticsRepository;
 use serde::{Deserialize, Serialize};
-use serenity::all::Timestamp;
+use serenity::all::{Timestamp, UserId};
+use tokio::sync::Mutex;
 
 // Custom user data passed to all command functions
 pub struct Data {
-    pub character_statistics_repository: FirestoreCharacterStatisticsRepository,
+    pub character_statistics_repository: Mutex<SQLiteCharacterStatisticsRepository>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CharacterStatistics {
-    total_characters: i32,
-    history: Vec<CharacterLogEntry>,
+    user_id: UserId,
+    pub total_characters: i32,
 }
 
 impl CharacterStatistics {
-    pub fn total_characters(&self) -> i32 {
-        self.total_characters
-    }
-
-    pub fn history(&self) -> &Vec<CharacterLogEntry> {
-        &self.history
-    }
-
-    pub fn add_log(&mut self, characters: i32, time: &Timestamp, notes: Option<String>) -> () {
-        let owned_time = time.clone();
-        self.history.push(CharacterLogEntry {
-            characters,
-            time: owned_time,
-            notes: notes.into(),
-        });
-        self.total_characters += characters;
-    }
-
-    pub fn new() -> CharacterStatistics {
+    pub fn new(user_id: UserId) -> CharacterStatistics {
         CharacterStatistics {
             total_characters: 0,
-            history: Vec::new(),
+            user_id,
+        }
+    }
+
+    pub fn with_total_characters(user_id: UserId, total_characters: i32) -> CharacterStatistics {
+        CharacterStatistics {
+            total_characters,
+            user_id,
         }
     }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CharacterLogEntry {
+    user_id: UserId,
     characters: i32,
     time: Timestamp,
     notes: Option<String>,
@@ -58,5 +49,19 @@ impl CharacterLogEntry {
 
     pub fn notes(&self) -> &Option<String> {
         &self.notes
+    }
+
+    pub fn new(
+        user_id: UserId,
+        characters: i32,
+        time: &Timestamp,
+        notes: Option<String>,
+    ) -> CharacterLogEntry {
+        CharacterLogEntry {
+            user_id,
+            characters,
+            time: time.to_owned(),
+            notes,
+        }
     }
 }
