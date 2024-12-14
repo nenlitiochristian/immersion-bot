@@ -34,6 +34,20 @@ impl SQLiteCharacterStatisticsRepository {
     pub fn new(connection: Connection) -> SQLiteCharacterStatisticsRepository {
         SQLiteCharacterStatisticsRepository { connection }
     }
+
+    fn initialize_statistics(&mut self, user_id: UserId) -> Result<CharacterStatistics, String> {
+        let id = user_id.get();
+        self.connection
+            .execute(
+                "
+        INSERT INTO CharacterStatistics (user_id, total_characters)
+        VALUES (?1, ?2)
+        ",
+                (id, 0),
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(CharacterStatistics::with_total_characters(user_id, 0))
+    }
 }
 
 impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository {
@@ -78,10 +92,9 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository {
         transaction
             .execute(
                 "
-    INSERT INTO CharacterStatistics (user_id, total_characters)
-    VALUES (?1, ?2)
-    ON CONFLICT(user_id) DO UPDATE SET
-    total_characters = total_characters + excluded.total_characters;
+    UPDATE CharacterStatistics 
+    SET total_characters = ?1
+    WHERE user_id = ?2;
         ",
                 (new_statistics.total_characters, id),
             )
@@ -96,7 +109,41 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository {
         &mut self,
         page_number: usize,
     ) -> Result<Vec<(UserId, CharacterStatistics)>, String> {
-        todo!()
+        const PAGE_SIZE: usize = 15;
+        let offset = page_number * PAGE_SIZE;
+
+        let mut stmt = self
+            .connection
+            .prepare(
+                "
+                SELECT user_id, total_characters
+                FROM CharacterStatistics
+                ORDER BY total_characters DESC
+                LIMIT ?1 OFFSET ?2;
+                ",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let rows = stmt
+            .query_map([PAGE_SIZE as i64, offset as i64], |row| {
+                let user_id: u64 = row.get(0)?;
+                let total_characters: i32 = row.get(1)?;
+                Ok((
+                    UserId::new(user_id),
+                    CharacterStatistics::with_total_characters(
+                        UserId::from(user_id),
+                        total_characters,
+                    ),
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row.map_err(|e| e.to_string())?);
+        }
+
+        Ok(result)
     }
 
     async fn get_log_entries(&mut self, user_id: UserId) -> Result<Vec<CharacterLogEntry>, String> {
@@ -161,7 +208,7 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository {
 
         let characters = match characters {
             Some(c) => c,
-            None => return Ok(None),
+            None => self.initialize_statistics(user_id)?.total_characters,
         };
 
         Ok(Some(CharacterStatistics::with_total_characters(

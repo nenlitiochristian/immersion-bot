@@ -117,7 +117,7 @@ async fn setup_discord_bot(data: Data) {
 }
 
 fn setup_sqlite_connection() -> rusqlite::Result<Connection> {
-    let connection = Connection::open_in_memory()?;
+    let connection = Connection::open("perdition.db")?;
 
     // Setup migration
     connection.execute(
@@ -126,8 +126,13 @@ fn setup_sqlite_connection() -> rusqlite::Result<Connection> {
 CREATE TABLE IF NOT EXISTS CharacterStatistics (
     user_id INTEGER PRIMARY KEY, -- the discord id of the user
     total_characters INTEGER NOT NULL
-);
+);    
+    ",
+        (),
+    )?;
 
+    connection.execute(
+        "
 -- Create the CharacterLogEntry table
 CREATE TABLE IF NOT EXISTS CharacterLogEntry (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,8 +140,8 @@ CREATE TABLE IF NOT EXISTS CharacterLogEntry (
     characters INTEGER NOT NULL,
     time INTEGER NOT NULL, -- Store timestamp as Unix timestamp (64bits in SQLite)
     notes TEXT, -- Optional field for notes
-    FOREIGN KEY (statistic_id) REFERENCES CharacterStatistics (id)
-);    
+    FOREIGN KEY (user_id) REFERENCES CharacterStatistics (user_id)
+);
     ",
         (),
     )?;
