@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS CharacterLogEntry (
 );    
     ",
         (),
-    );
+    )?;
 
     Ok(connection)
 }

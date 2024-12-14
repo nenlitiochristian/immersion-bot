@@ -57,13 +57,15 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository {
             Ok(tx) => tx,
         };
 
-        transaction.execute(
-            "
+        transaction
+            .execute(
+                "
             INSERT INTO CharacterLogEntry (user_id, characters, time, notes)
             VALUES (?1, ?2, ?3, ?4);
             ",
-            (id, characters, time.unix_timestamp(), notes),
-        );
+                (id, characters, time.unix_timestamp(), notes),
+            )
+            .map_err(|e| e.to_string())?;
 
         let mut new_statistics = match old_statistics {
             None => CharacterStatistics::new(user_id),
@@ -73,15 +75,17 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository {
         new_statistics.total_characters += characters;
 
         // INSERT IF NOT EXISTS, UPDATE IF EXISTS
-        transaction.execute(
-            "
+        transaction
+            .execute(
+                "
     INSERT INTO CharacterStatistics (user_id, total_characters)
     VALUES (?1, ?2)
     ON CONFLICT(user_id) DO UPDATE SET
     total_characters = total_characters + excluded.total_characters;
         ",
-            (new_statistics.total_characters, id),
-        );
+                (new_statistics.total_characters, id),
+            )
+            .map_err(|e| e.to_string())?;
 
         transaction.commit().map_err(|e| e.to_string())?;
 

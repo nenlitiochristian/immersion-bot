@@ -1,9 +1,7 @@
 use poise::CreateReply;
 use serenity::all::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter};
 
-use crate::{
-    model::CharacterStatistics, repository::CharacterStatisticsRepository, Context, Error,
-};
+use crate::{repository::CharacterStatisticsRepository, Context, Error};
 
 /// Shows this help menu.
 #[poise::command(track_edits, slash_command)]
