@@ -126,20 +126,24 @@ pub async fn history(ctx: Context<'_>) -> Result<(), Error> {
 
     let mut embed_builder = CreateEmbed::default()
         .author(CreateEmbedAuthor::new("Bread"))
-        .title(format!("Immersion Tracking Bot"));
+        .title("Immersion Tracking Bot");
 
+    let mut lines = "".to_string();
     for history in log_entries {
         let notes = match history.notes() {
             None => "-",
             Some(x) => &x,
         };
-        let time = history.time().format("%Y年%m月%d日");
-        embed_builder = embed_builder.field(
-            format!("<t:{}>: {} characters", time, history.characters()),
-            notes,
-            false,
+        let time = history.time().format("%Y年%m月%d日").to_string();
+        lines += &format!(
+            "{}: {} characters | {}\n",
+            time,
+            history.characters(),
+            notes
         );
     }
+
+    embed_builder = embed_builder.description(lines);
 
     ctx.send(CreateReply::default().embed(embed_builder))
         .await?;
@@ -148,10 +152,35 @@ pub async fn history(ctx: Context<'_>) -> Result<(), Error> {
 
 /// Shows the leaderboard.
 #[poise::command(slash_command)]
-pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
-    let message = "Not implemented yet.";
+pub async fn leaderboard(
+    ctx: Context<'_>,
+    #[description = "The page number of the leaderboard to display. Defaults to the first page."]
+    page: Option<usize>,
+) -> Result<(), Error> {
+    let mut repository = ctx.data().character_statistics_repository.lock().await;
+    let page_number = page.unwrap_or(1).saturating_sub(1);
+    let users = repository
+        .fetch_paginated_users_by_characters(page_number)
+        .await?;
 
-    ctx.send(CreateReply::default().content(message)).await?;
+    let embed_builder = CreateEmbed::default()
+        .author(CreateEmbedAuthor::new("Bread"))
+        .title("Immersion Tracking Bot");
+
+    let mut line = "".to_owned();
+    for (index, user) in users.iter().enumerate() {
+        let discord_user = user.get_user_id().to_user(ctx).await?;
+
+        line += &format!(
+            "{}. {}: {} characters.",
+            index + 1,
+            discord_user.display_name(),
+            user.total_characters
+        );
+    }
+
+    ctx.send(CreateReply::default().embed(embed_builder.description(line)))
+        .await?;
     Ok(())
 }
 

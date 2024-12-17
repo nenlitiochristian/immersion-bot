@@ -21,7 +21,7 @@ pub trait CharacterStatisticsRepository {
     async fn fetch_paginated_users_by_characters(
         &mut self,
         page_number: usize,
-    ) -> Result<Vec<(UserId, CharacterStatistics)>, String>;
+    ) -> Result<Vec<CharacterStatistics>, String>;
 
     async fn get_log_entries(&mut self, user_id: UserId) -> Result<Vec<CharacterLogEntry>, String>;
 }
@@ -108,7 +108,7 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository {
     async fn fetch_paginated_users_by_characters(
         &mut self,
         page_number: usize,
-    ) -> Result<Vec<(UserId, CharacterStatistics)>, String> {
+    ) -> Result<Vec<CharacterStatistics>, String> {
         const PAGE_SIZE: usize = 15;
         let offset = page_number * PAGE_SIZE;
 
@@ -128,12 +128,9 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository {
             .query_map([PAGE_SIZE as i64, offset as i64], |row| {
                 let user_id: u64 = row.get(0)?;
                 let total_characters: i32 = row.get(1)?;
-                Ok((
-                    UserId::new(user_id),
-                    CharacterStatistics::with_total_characters(
-                        UserId::from(user_id),
-                        total_characters,
-                    ),
+                Ok(CharacterStatistics::with_total_characters(
+                    UserId::from(user_id),
+                    total_characters,
                 ))
             })
             .map_err(|e| e.to_string())?;

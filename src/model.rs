@@ -28,6 +28,10 @@ impl CharacterStatistics {
             user_id,
         }
     }
+
+    pub fn get_user_id(&self) -> UserId {
+        self.user_id
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
