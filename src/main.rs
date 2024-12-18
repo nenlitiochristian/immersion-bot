@@ -7,10 +7,12 @@ mod repository;
 use dotenv::dotenv;
 use model::Data;
 use poise::serenity_prelude as serenity;
-use repository::SQLiteCharacterStatisticsRepository;
 use rusqlite::Connection;
-use std::{env::var, sync::Arc, time::Duration};
-use tokio::sync::Mutex;
+use std::{
+    env::var,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 // Types used by all command functions
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -154,9 +156,8 @@ async fn main() {
     dotenv().ok();
 
     let connection = setup_sqlite_connection().expect("Failed to open an SQLite connection!");
-    let sqlite_repository = SQLiteCharacterStatisticsRepository::new(connection);
     let data = Data {
-        character_statistics_repository: Mutex::new(sqlite_repository),
+        connection: Mutex::new(connection),
     };
     setup_discord_bot(data).await
 }

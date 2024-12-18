@@ -1,11 +1,12 @@
-use crate::repository::SQLiteCharacterStatisticsRepository;
+use std::sync::Mutex;
+
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serenity::all::{Timestamp, UserId};
-use tokio::sync::Mutex;
 
 // Custom user data passed to all command functions
 pub struct Data {
-    pub character_statistics_repository: Mutex<SQLiteCharacterStatisticsRepository>,
+    pub connection: Mutex<Connection>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

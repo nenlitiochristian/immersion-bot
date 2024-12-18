@@ -1,7 +1,10 @@
 use poise::CreateReply;
 use serenity::all::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter};
 
-use crate::{repository::CharacterStatisticsRepository, Context, Error};
+use crate::{
+    repository::{CharacterStatisticsRepository, SQLiteCharacterStatisticsRepository},
+    Context, Error,
+};
 
 /// Shows this help menu.
 #[poise::command(track_edits, slash_command)]
@@ -32,25 +35,25 @@ pub async fn log_characters(
     #[description = "The amount of characters read"] characters: i32,
     #[description = "Extra information such as the title of the book or VN"] notes: Option<String>,
 ) -> Result<(), Error> {
-    let mut repository = ctx.data().character_statistics_repository.lock().await;
-    let user_id = ctx.author().id;
+    let data = {
+        let mut connection = ctx.data().connection.lock().unwrap();
+        let tx = connection.transaction().map_err(|e| e.to_string())?;
+        let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
 
-    let time = &ctx.created_at();
-    let result = repository
-        .add_log_entry(user_id, characters, time, notes)
-        .await;
+        let user_id = ctx.author().id;
 
-    let data = match result {
-        Ok(data) => data,
-        Err(msg) => {
-            return Err(Error::from(msg));
-        }
+        let time = &ctx.created_at();
+        let data = repository.add_log_entry(user_id, characters, time, notes)?;
+        tx.commit()?;
+
+        data
     };
 
     let response = format!(
         "Logged {} characters. Total characters logged: {}.",
         characters, data.total_characters
     );
+
     ctx.say(response).await?;
     Ok(())
 }
@@ -113,15 +116,16 @@ You can track characters read from manga by using [this bookmarklet](https://git
 /// Shows your latest log history.
 #[poise::command(slash_command)]
 pub async fn history(ctx: Context<'_>) -> Result<(), Error> {
-    let mut repository = ctx.data().character_statistics_repository.lock().await;
-    let user_id = ctx.author().id;
-    let result = repository.get_log_entries(user_id).await;
+    let log_entries = {
+        let mut connection = ctx.data().connection.lock().unwrap();
+        let tx = connection.transaction().map_err(|e| e.to_string())?;
+        let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
 
-    let log_entries = match result {
-        Ok(data) => data,
-        Err(msg) => {
-            return Err(Error::from(msg));
-        }
+        let user_id = ctx.author().id;
+        let entries = repository.get_log_entries(user_id)?;
+        tx.commit()?;
+
+        entries
     };
 
     let mut embed_builder = CreateEmbed::default()
@@ -132,7 +136,7 @@ pub async fn history(ctx: Context<'_>) -> Result<(), Error> {
     for history in log_entries {
         let notes = match history.notes() {
             None => "-",
-            Some(x) => &x,
+            Some(x) => x,
         };
         let time = history.time().format("%Y年%m月%d日").to_string();
         lines += &format!(
@@ -144,7 +148,6 @@ pub async fn history(ctx: Context<'_>) -> Result<(), Error> {
     }
 
     embed_builder = embed_builder.description(lines);
-
     ctx.send(CreateReply::default().embed(embed_builder))
         .await?;
     Ok(())
@@ -157,11 +160,17 @@ pub async fn leaderboard(
     #[description = "The page number of the leaderboard to display. Defaults to the first page."]
     page: Option<usize>,
 ) -> Result<(), Error> {
-    let mut repository = ctx.data().character_statistics_repository.lock().await;
-    let page_number = page.unwrap_or(1).saturating_sub(1);
-    let users = repository
-        .fetch_paginated_users_by_characters(page_number)
-        .await?;
+    let users = {
+        let mut connection = ctx.data().connection.lock().unwrap();
+        let tx = connection.transaction().map_err(|e| e.to_string())?;
+        let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
+
+        let page_number = page.unwrap_or(1).saturating_sub(1);
+        let users = repository.fetch_paginated_users_by_characters(page_number)?;
+
+        tx.commit()?;
+        users
+    };
 
     let embed_builder = CreateEmbed::default()
         .author(CreateEmbedAuthor::new("Bread"))
