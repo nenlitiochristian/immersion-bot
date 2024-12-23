@@ -3,6 +3,7 @@
 mod commands;
 mod model;
 mod repository;
+mod roles;
 
 use dotenv::dotenv;
 use model::Data;

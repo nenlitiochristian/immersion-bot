@@ -196,18 +196,48 @@ pub async fn leaderboard(
 /// Shows the list of roles available and how to get them.
 #[poise::command(slash_command)]
 pub async fn roles(ctx: Context<'_>) -> Result<(), Error> {
-    let message = "Not implemented yet.";
+    let embed = CreateEmbed::default()
+        .author(CreateEmbedAuthor::new("Bread"))
+        .title("Roles")
+        .description("平民 - 100,000 characters
+男爵 - 500,000 characters (must pass quiz 1)
+子爵 - 1,000,000 characters
+伯爵 - 2,000,000 characters
+侯爵 - 3,500,000 characters
+公爵 - 5,000,000 characters (must pass quiz 2)
+大公 - 7,500,000 characters
+王様 - 10,000,000 characters
+天皇 - 15,000,000 characters
+地仙 - 25,000,000 characters (must pass quiz 3)
+天仙 - 50,000,000 characters (must pass quiz 4)
+上手 - 100,000,000 characters (must pass quiz 5)")
+        .footer(CreateEmbedFooter::new(
+            "See /help for a list of commands, /how_to_track for further immersion tracking information, and /roles for roles.",
+        ));
 
-    ctx.send(CreateReply::default().content(message)).await?;
+    ctx.send(CreateReply::default().embed(embed)).await?;
     Ok(())
 }
 
 /// Shows the list of quizzes you need to unlock certain roles.
 #[poise::command(slash_command)]
 pub async fn quizzes(ctx: Context<'_>) -> Result<(), Error> {
-    let message = "Not implemented yet.";
+    let embed = CreateEmbed::default()
+        .author(CreateEmbedAuthor::new("Bread"))
+        .title("Quizzes")
+        .description("Certain roles require you to pass a quiz (see /roles for more info). You're allowed to take the quiz as many times as you want. Take the quiz in #kotoba or #kotoba2. Quizzes must be taken in order (you can't skip quiz 1 and 2 by doing 3 first). 
+        
+        **Commands**
+        Quiz 1 (男爵): `k!quiz pq_1 15 nd mmq=4 font=5 atl=20`
+Quiz 2 (公爵): `k!quiz pq_2 20 nd mmq=4 font=5 atl=20`
+Quiz 3 (地仙): `k!quiz pq_3 20 nd mmq=4 font=5 atl=20`
+Quiz 4 (天仙): `k!quiz pq_4+animals+bugs+fish+plants+birds+vegetables+yojijukugo+countries 30 nd mmq=4 font=5 atl=20`
+Quiz 5 (上手): `k!quiz stations_full 100 nd mmq=4 font=5 atl=20`")
+        .footer(CreateEmbedFooter::new(
+            "See /help for a list of commands, /how_to_track for further immersion tracking information, and /roles for roles.",
+        ));
 
-    ctx.send(CreateReply::default().content(message)).await?;
+    ctx.send(CreateReply::default().embed(embed)).await?;
     Ok(())
 }
 
