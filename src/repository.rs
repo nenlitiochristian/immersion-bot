@@ -19,11 +19,15 @@ pub trait CharacterStatisticsRepository {
         user_id: UserId,
     ) -> Result<Option<CharacterStatistics>, Box<dyn Error + Sync + Send>>;
 
+    fn get_rank(&mut self, statistics: &CharacterStatistics) -> Result<i32, crate::Error>;
+
     /// Returns a list of 15 users, sorted by the amount of characters logged descendingly.
     fn fetch_paginated_users_by_characters(
         &mut self,
         page_number: usize,
     ) -> Result<Vec<CharacterStatistics>, Box<dyn Error + Sync + Send>>;
+
+    fn get_total_users(&mut self) -> Result<u32, crate::Error>;
 
     fn get_log_entries(
         &mut self,
@@ -193,5 +197,33 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository<'_> {
         Ok(Some(CharacterStatistics::with_total_characters(
             user_id, characters,
         )))
+    }
+
+    fn get_rank(&mut self, statistics: &CharacterStatistics) -> Result<i32, crate::Error> {
+        let mut stmt = self.transaction.prepare(
+            "
+            SELECT COUNT(*) 
+            FROM CharacterStatistics 
+            WHERE total_characters > ?1
+            ",
+        )?;
+
+        let rank_count: i64 = stmt.query_row([statistics.total_characters], |row| row.get(0))?;
+
+        // The rank is one plus the number of users with higher total characters
+        let rank = (rank_count + 1) as i32;
+        Ok(rank)
+    }
+
+    fn get_total_users(&mut self) -> Result<u32, crate::Error> {
+        let mut stmt = self.transaction.prepare(
+            "
+            SELECT COUNT(*) 
+            FROM CharacterStatistics 
+            ",
+        )?;
+
+        let count: u32 = stmt.query_row([], |row| row.get(0))?;
+        Ok(count)
     }
 }

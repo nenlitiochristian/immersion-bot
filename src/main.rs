@@ -6,6 +6,7 @@ mod kotoba;
 mod model;
 mod repository;
 mod roles;
+mod utils;
 
 use dotenv::dotenv;
 use model::Data;

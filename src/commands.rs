@@ -4,6 +4,7 @@ use serenity::all::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter};
 use crate::{
     repository::{CharacterStatisticsRepository, SQLiteCharacterStatisticsRepository},
     roles::UserRoles,
+    utils::format_with_commas,
     Context, Error,
 };
 
@@ -153,7 +154,11 @@ pub async fn history(ctx: Context<'_>) -> Result<(), Error> {
         );
     }
 
-    embed_builder = embed_builder.description(lines);
+    embed_builder = embed_builder
+        .description(lines)
+        .footer(CreateEmbedFooter::new(
+            "See /help for a list of commands, and /usage for an explanation on what I can do.",
+        ));
     ctx.send(CreateReply::default().embed(embed_builder))
         .await?;
     Ok(())
@@ -166,35 +171,68 @@ pub async fn leaderboard(
     #[description = "The page number of the leaderboard to display. Defaults to the first page."]
     page: Option<usize>,
 ) -> Result<(), Error> {
-    let users = {
+    let page_number = page.unwrap_or(1).saturating_sub(1);
+
+    let (users, rank, users_count, stats) = {
         let mut connection = ctx.data().connection.lock().unwrap();
         let tx = connection.transaction().map_err(|e| e.to_string())?;
         let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
 
-        let page_number = page.unwrap_or(1).saturating_sub(1);
         let users = repository.fetch_paginated_users_by_characters(page_number)?;
+        let stats = repository.get_statistics(ctx.author().id)?;
+        let rank = match &stats {
+            Some(stats) => Some(repository.get_rank(stats)?),
+            None => None,
+        };
 
+        let users_count = repository.get_total_users()?;
         tx.commit()?;
-        users
+        (users, rank, users_count, stats)
     };
 
-    let embed_builder = CreateEmbed::default()
-        .author(CreateEmbedAuthor::new("Bread"))
-        .title("Immersion Tracking Bot");
+    let rank_line = match stats {
+        Some(stats) => format!(
+            "You are currently rank {} of {}, with {} total characters.",
+            rank.unwrap(),
+            users_count,
+            stats.total_characters
+        ),
+        None => "You don't have any characters logged yet.".to_string(),
+    };
+
+    let mut embed_builder = CreateEmbed::default()
+        .title("Leaderboard")
+        .description(format!(
+            "Displaying page {} of {}.\n{}",
+            page_number + 1,
+            users_count.div_ceil(15),
+            rank_line
+        ));
 
     let mut line = "".to_owned();
     for (index, user) in users.iter().enumerate() {
         let discord_user = user.get_user_id().to_user(ctx).await?;
 
         line += &format!(
-            "{}. {}: {} characters.",
+            "{}. {}: {} characters.\n",
             index + 1,
             discord_user.display_name(),
-            user.total_characters
+            format_with_commas(user.total_characters)
         );
     }
 
-    ctx.send(CreateReply::default().embed(embed_builder.description(line)))
+    if line.is_empty() {
+        line = format!("No users found for page {}.", page_number + 1)
+    }
+
+    embed_builder =
+        embed_builder
+            .field("Top Immersers", line, false)
+            .footer(CreateEmbedFooter::new(
+                "See /help for a list of commands, and /usage for an explanation on what I can do.",
+            ));
+
+    ctx.send(CreateReply::default().embed(embed_builder))
         .await?;
     Ok(())
 }

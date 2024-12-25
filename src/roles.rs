@@ -364,16 +364,21 @@ impl Roles {
         quiz_roles: &Vec<QuizRoles>,
         characters: i32,
     ) -> Option<Roles> {
-        // Check for the highest eligible role by iterating from the last element
-        for requirement in ROLE_REQUIREMENTS.iter().rev() {
-            if characters >= requirement.characters
-                && (requirement.quiz_role.is_none()
-                    || quiz_roles.contains(&requirement.quiz_role.unwrap()))
-            {
-                return Some(requirement.role.clone());
+        // Check for the highest eligible role
+        let mut highest_role: Option<Roles> = None;
+        for requirement in ROLE_REQUIREMENTS.iter() {
+            if characters >= requirement.characters {
+                // immediately return current highest if we don't have the role, can't go any further
+                if requirement.quiz_role.is_some()
+                    && !quiz_roles.contains(&requirement.quiz_role.unwrap())
+                {
+                    return highest_role;
+                }
+
+                highest_role = Some(requirement.role.clone());
             }
         }
-        None
+        highest_role
     }
 
     pub fn from_string(input: &str) -> Option<Roles> {
