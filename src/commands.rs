@@ -50,8 +50,10 @@ pub async fn log_characters(
         data
     };
 
-    let roles = UserRoles::new(ctx).await;
-    roles.update_role(ctx, &data).await;
+    let user_roles = &ctx.author_member().await.unwrap().roles;
+    let guild_roles = &ctx.guild().unwrap().roles.clone();
+    let roles = UserRoles::new(user_roles, guild_roles);
+    roles.update_role(ctx, &data).await?;
 
     let response = format!(
         "Logged {} characters. Total characters logged: {}.",

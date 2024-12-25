@@ -8,6 +8,7 @@ mod roles;
 use dotenv::dotenv;
 use model::Data;
 use poise::serenity_prelude as serenity;
+use roles::QuizRoles;
 use rusqlite::Connection;
 use std::{
     env::var,
@@ -81,17 +82,12 @@ async fn setup_discord_bot(data: Data) {
                 Ok(true)
             })
         }),
+
         // Enforce command checks even for owners (enforced by default)
         // Set to true to bypass checks, which is useful for testing
         skip_checks_for_owners: false,
-        event_handler: |_ctx, event, _framework, _data| {
-            Box::pin(async move {
-                println!(
-                    "Got an event in event handler: {:?}",
-                    event.snake_case_name()
-                );
-                Ok(())
-            })
+        event_handler: |ctx, event, framework, data| {
+            Box::pin(event_handler(ctx, event, framework, data))
         },
         ..Default::default()
     };
@@ -117,6 +113,22 @@ async fn setup_discord_bot(data: Data) {
         .await;
 
     client.unwrap().start().await.unwrap()
+}
+
+async fn event_handler(
+    _ctx: &serenity::Context,
+    event: &serenity::FullEvent,
+    _framework: poise::FrameworkContext<'_, Data, Error>,
+    _data: &Data,
+) -> Result<(), Error> {
+    match event {
+        serenity::FullEvent::Message { new_message } => {
+            print!("{}", new_message.content);
+            QuizRoles::handle_quiz_roles(_ctx).await;
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn setup_sqlite_connection() -> rusqlite::Result<Connection> {
