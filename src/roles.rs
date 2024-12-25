@@ -229,6 +229,16 @@ impl QuizRoles {
                         .unwrap();
                     let member = guild_id.member(ctx, user_id).await?;
                     member.add_role(ctx, role.id).await?;
+                    message
+                        .reply(
+                            ctx,
+                            format!(
+                                "Congratulations <@{}> on passing {}!",
+                                user_id.get(),
+                                current_quiz.quiz_role.to_string()
+                            ),
+                        )
+                        .await?;
                 } else {
                     message
                         .reply(
