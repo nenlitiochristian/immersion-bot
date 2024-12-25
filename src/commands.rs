@@ -3,6 +3,7 @@ use serenity::all::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter};
 
 use crate::{
     repository::{CharacterStatisticsRepository, SQLiteCharacterStatisticsRepository},
+    roles::UserRoles,
     Context, Error,
 };
 
@@ -48,6 +49,9 @@ pub async fn log_characters(
 
         data
     };
+
+    let roles = UserRoles::new(ctx).await;
+    roles.update_role(ctx, &data).await;
 
     let response = format!(
         "Logged {} characters. Total characters logged: {}.",
