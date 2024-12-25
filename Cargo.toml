@@ -8,6 +8,7 @@ chrono = "0.4.38"
 dotenv = "0.15.0"
 poise = "0.6.1"
 rand = "0.8.5"
+reqwest = { version = "0.12.9", features = ["json"] }
 rusqlite = { version = "0.32.1", features = ["bundled"] }
 serde = "1.0.215"
 serenity = "0.12"

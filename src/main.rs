@@ -1,6 +1,8 @@
 #![warn(clippy::str_to_string)]
 
 mod commands;
+mod constants;
+mod kotoba;
 mod model;
 mod repository;
 mod roles;
@@ -8,6 +10,7 @@ mod roles;
 use dotenv::dotenv;
 use model::Data;
 use poise::serenity_prelude as serenity;
+use reqwest::Client;
 use roles::QuizRoles;
 use rusqlite::Connection;
 use std::{
@@ -116,15 +119,14 @@ async fn setup_discord_bot(data: Data) {
 }
 
 async fn event_handler(
-    _ctx: &serenity::Context,
+    ctx: &serenity::Context,
     event: &serenity::FullEvent,
     _framework: poise::FrameworkContext<'_, Data, Error>,
-    _data: &Data,
+    data: &Data,
 ) -> Result<(), Error> {
     match event {
         serenity::FullEvent::Message { new_message } => {
-            print!("{}", new_message.content);
-            QuizRoles::handle_quiz_roles(_ctx).await;
+            QuizRoles::handle_quiz_roles(ctx, new_message, data).await?;
         }
         _ => {}
     }
@@ -169,8 +171,11 @@ async fn main() {
     dotenv().ok();
 
     let connection = setup_sqlite_connection().expect("Failed to open an SQLite connection!");
+    let http_client = Client::new();
+
     let data = Data {
         connection: Mutex::new(connection),
+        http_client,
     };
     setup_discord_bot(data).await
 }

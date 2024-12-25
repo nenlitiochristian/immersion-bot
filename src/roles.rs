@@ -1,8 +1,12 @@
 use std::collections::HashMap;
 
-use serenity::all::{Role, RoleId};
+use serenity::all::{Message, Role, RoleId};
 
-use crate::model::CharacterStatistics;
+use crate::{
+    constants,
+    kotoba::QuizData,
+    model::{CharacterStatistics, Data},
+};
 
 // get roles on request, no need to insert to DB
 pub struct UserRoles {
@@ -97,7 +101,46 @@ impl QuizRoles {
         }
     }
 
-    pub async fn handle_quiz_roles(ctx: &serenity::client::Context) {}
+    pub async fn handle_quiz_roles(
+        ctx: &serenity::client::Context,
+        message: &Message,
+        data: &Data,
+    ) -> Result<(), crate::Error> {
+        if message.embeds.is_empty() {
+            return Ok(());
+        }
+
+        // make sure the embed is from kotoba
+        // the id is hard coded to make sure it's really kotoba
+        if message.author.id.get() != constants::KOTOBA_BOT_ID {
+            return Ok(());
+        }
+
+        for embed in message.embeds.iter() {
+            for field in embed.fields.iter() {
+                // find the game report API
+                if field.name != "Game Report" || !field.value.contains("https://kotobaweb.com/") {
+                    continue;
+                }
+
+                let url_start = field.value.find('(').unwrap() + 1;
+                let url_end = field.value.find(')').unwrap();
+                let substring = &field.value[url_start..url_end];
+
+                let api_url = substring.replace("dashboard", "api");
+                println!("{api_url}");
+
+                let response = data.http_client.get(api_url).send().await?;
+                if response.status().is_success() {
+                    println!("{:?}", response.json::<QuizData>().await?);
+                } else {
+                    println!("Request failed with status: {}", response.status());
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

@@ -1,5 +1,6 @@
 use std::sync::Mutex;
 
+use reqwest::Client;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serenity::all::{Timestamp, UserId};
@@ -7,6 +8,8 @@ use serenity::all::{Timestamp, UserId};
 // Custom user data passed to all command functions
 pub struct Data {
     pub connection: Mutex<Connection>,
+    /// needed to make calls to the kotoba API for quizzes
+    pub http_client: Client,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -70,3 +73,4 @@ impl CharacterLogEntry {
         }
     }
 }
+
