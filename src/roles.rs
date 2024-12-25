@@ -265,8 +265,9 @@ pub enum Roles {
     OoyakeKoushaku,
     Taikou,
     Ousama,
-    Texnnou,
     Chisen,
+    Texnsen,
+    Texnnou,
     Jouzu,
 }
 
@@ -329,7 +330,7 @@ static ROLE_REQUIREMENTS: [RoleRequirement; 12] = [
         quiz_role: Some(QuizRoles::Quiz3),
     },
     RoleRequirement {
-        role: Roles::Texnnou,
+        role: Roles::Texnsen,
         characters: 50_000_000,
         quiz_role: Some(QuizRoles::Quiz4),
     },
@@ -352,7 +353,8 @@ impl Roles {
             Self::Taikou => "大公",
             Self::Ousama => "王様",
             Self::Texnnou => "天皇",
-            Self::Chisen => "智仙",
+            Self::Chisen => "地仙",
+            Self::Texnsen => "天仙",
             Self::Jouzu => "上手",
         };
         string.to_string()
@@ -385,7 +387,7 @@ impl Roles {
             "大公" => Some(Self::Taikou),
             "王様" => Some(Self::Ousama),
             "天皇" => Some(Self::Texnnou),
-            "智仙" => Some(Self::Chisen),
+            "地仙" => Some(Self::Chisen),
             "上手" => Some(Self::Jouzu),
             _ => None, // Return `None` for invalid strings
         }
