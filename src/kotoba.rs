@@ -2,21 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct QuizData {
-    #[serde(rename = "_id")]
-    pub id: String,
-    #[serde(rename = "sessionName")]
-    pub session_name: String,
-    #[serde(rename = "startTime")]
-    pub start_time: String,
-    #[serde(rename = "endTime")]
-    pub end_time: String,
     pub participants: Vec<Participant>,
-    #[serde(rename = "discordServerIconUri")]
-    pub discord_server_icon_uri: Option<String>,
-    #[serde(rename = "discordServerName")]
-    pub discord_server_name: String,
-    #[serde(rename = "discordChannelName")]
-    pub discord_channel_name: String,
     pub scores: Vec<Score>,
     pub settings: Settings,
     pub decks: Vec<Deck>,
@@ -29,18 +15,13 @@ pub struct QuizData {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Participant {
-    #[serde(rename = "_id")]
-    pub id: String,
     #[serde(rename = "discordUser")]
     pub discord_user: DiscordUser,
-    pub admin: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct DiscordUser {
     pub id: String,
-    pub avatar: String,
-    pub username: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -75,39 +56,8 @@ pub struct Settings {
     #[serde(rename = "maxMissedQuestions")]
     pub max_missed_questions: i32,
     pub shuffle: bool,
-    #[serde(rename = "serverSettings")]
-    pub server_settings: ServerSettings,
     #[serde(rename = "inlineSettings")]
     pub inline_settings: InlineSettings,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ServerSettings {
-    #[serde(rename = "bgColor")]
-    pub bg_color: String,
-    #[serde(rename = "fontFamily")]
-    pub font_family: String,
-    pub color: String,
-    pub size: i32,
-    #[serde(rename = "additionalAnswerWaitWindow")]
-    pub additional_answer_wait_window: f64,
-    #[serde(rename = "answerTimeLimit")]
-    pub answer_time_limit: i32,
-    #[serde(rename = "conquestAndInfernoEnabled")]
-    pub conquest_and_inferno_enabled: bool,
-    #[serde(rename = "internetDecksEnabled")]
-    pub internet_decks_enabled: bool,
-    #[serde(rename = "delayAfterAnsweredQuestion")]
-    pub delay_after_answered_question: f64,
-    #[serde(rename = "delayAfterUnansweredQuestion")]
-    pub delay_after_unanswered_question: i32,
-    #[serde(rename = "scoreLimit")]
-    pub score_limit: i32,
-    #[serde(rename = "unansweredQuestionLimit")]
-    pub unanswered_question_limit: i32,
-    #[serde(rename = "maxMissedQuestions")]
-    pub max_missed_questions: i32,
-    pub shuffle: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

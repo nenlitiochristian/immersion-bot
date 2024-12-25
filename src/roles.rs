@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use serenity::all::{Message, Role, RoleId};
+use serenity::all::{Message, Role, RoleId, UserId};
 
 use crate::{
-    constants,
+    constants::{self, QUIZ_FONT, QUIZ_TIME_LIMIT},
     kotoba::QuizData,
     model::{CharacterStatistics, Data},
 };
@@ -78,6 +78,47 @@ pub enum QuizRoles {
     Quiz5,
 }
 
+#[derive(Debug)]
+pub struct QuizRequirement {
+    pub quiz_role: QuizRoles,
+    pub quiz_name: &'static str,
+    pub score_limit: i32,
+    pub max_missed_questions: i32,
+}
+
+pub static QUIZ_REQUIREMENTS: [QuizRequirement; 5] = [
+    QuizRequirement {
+        quiz_role: QuizRoles::Quiz1,
+        quiz_name: "pq_1",
+        score_limit: 15,
+        max_missed_questions: 4,
+    },
+    QuizRequirement {
+        quiz_role: QuizRoles::Quiz2,
+        quiz_name: "pq_2",
+        score_limit: 20,
+        max_missed_questions: 4,
+    },
+    QuizRequirement {
+        quiz_role: QuizRoles::Quiz3,
+        quiz_name: "pq_3",
+        score_limit: 20,
+        max_missed_questions: 4,
+    },
+    QuizRequirement {
+        quiz_role: QuizRoles::Quiz4,
+        quiz_name: "pq_4",
+        score_limit: 30,
+        max_missed_questions: 4,
+    },
+    QuizRequirement {
+        quiz_role: QuizRoles::Quiz5,
+        quiz_name: "stations_full",
+        score_limit: 100,
+        max_missed_questions: 4,
+    },
+];
+
 impl QuizRoles {
     pub fn to_string(&self) -> String {
         let string = match self {
@@ -123,18 +164,79 @@ impl QuizRoles {
                     continue;
                 }
 
+                // fetch the data from kotoba
                 let url_start = field.value.find('(').unwrap() + 1;
                 let url_end = field.value.find(')').unwrap();
                 let substring = &field.value[url_start..url_end];
-
                 let api_url = substring.replace("dashboard", "api");
-                println!("{api_url}");
 
+                // deserialize and validate the data
                 let response = data.http_client.get(api_url).send().await?;
                 if response.status().is_success() {
-                    println!("{:?}", response.json::<QuizData>().await?);
+                    let quiz_data = response.json::<QuizData>().await?;
+
+                    if quiz_data.decks.len() != 1 {
+                        // we don't care, it's not our quiz deck, there needs to be only 1 for the attempt to be valid
+                        continue;
+                    }
+
+                    let quiz_name = &quiz_data.decks[0].short_name;
+
+                    // we only care if the quiz is one of the quizzes needed for the role
+                    let current_quiz = QUIZ_REQUIREMENTS
+                        .iter()
+                        .find(|requirement| requirement.quiz_name == quiz_name);
+                    if current_quiz.is_none() {
+                        continue;
+                    }
+                    let current_quiz = current_quiz.unwrap();
+
+                    //if it is indeed our deck, then we want to make sure there's only one participant
+                    if quiz_data.scores.len() != 1 || quiz_data.participants.len() != 1 {
+                        message
+                            .reply(ctx, "Only one participant is allowed.")
+                            .await?;
+                        continue;
+                    }
+
+                    let quiz_score_limit = &quiz_data.settings.score_limit;
+                    let quiz_max_missed_questions = &quiz_data.settings.max_missed_questions;
+                    let quiz_font = &quiz_data.settings.font;
+                    let quiz_time_limit = &quiz_data.settings.answer_time_limit_in_ms;
+                    let quiz_score = &quiz_data.scores[0].score;
+                    let quiz_user = &quiz_data.participants[0].discord_user.id;
+
+                    // Since the player didn't reach the score needed, we just ignore it
+                    if quiz_score < &current_quiz.score_limit {
+                        continue;
+                    }
+
+                    if &current_quiz.max_missed_questions != quiz_max_missed_questions
+                        || &current_quiz.score_limit != quiz_score_limit
+                        || quiz_font != QUIZ_FONT
+                        || quiz_time_limit != &QUIZ_TIME_LIMIT
+                    {
+                        message.reply(ctx, "Quiz settings were incorrect.").await?;
+                        continue;
+                    }
+
+                    // Actually give the role to the member
+                    let user_id = UserId::new(quiz_user.parse::<u64>()?);
+                    let guild_id = message.guild_id.unwrap();
+                    let guild = message.guild(&ctx.cache).unwrap().clone();
+                    let role = guild
+                        .role_by_name(&current_quiz.quiz_role.to_string())
+                        .unwrap();
+                    let member = guild_id.member(ctx, user_id).await?;
+                    member.add_role(ctx, role.id).await?;
                 } else {
-                    println!("Request failed with status: {}", response.status());
+                    message
+                        .reply(
+                            ctx,
+                            "Failed to get quiz results from kotoba, tag an admin for help.",
+                        )
+                        .await?;
+                    continue;
                 }
             }
         }
@@ -158,6 +260,76 @@ pub enum Roles {
     Jouzu,
 }
 
+#[derive(Debug, Clone)]
+pub struct RoleRequirement {
+    pub role: Roles,
+    pub characters: i32,
+    pub quiz_role: Option<QuizRoles>,
+}
+
+static ROLE_REQUIREMENTS: [RoleRequirement; 12] = [
+    RoleRequirement {
+        role: Roles::Heimin,
+        characters: 100_000,
+        quiz_role: None,
+    },
+    RoleRequirement {
+        role: Roles::Danshaku,
+        characters: 500_000,
+        quiz_role: Some(QuizRoles::Quiz1),
+    },
+    RoleRequirement {
+        role: Roles::Shishaku,
+        characters: 1_000_000,
+        quiz_role: None,
+    },
+    RoleRequirement {
+        role: Roles::Hakushaku,
+        characters: 2_000_000,
+        quiz_role: None,
+    },
+    RoleRequirement {
+        role: Roles::SourouKoushaku,
+        characters: 3_500_000,
+        quiz_role: None,
+    },
+    RoleRequirement {
+        role: Roles::OoyakeKoushaku,
+        characters: 5_000_000,
+        quiz_role: Some(QuizRoles::Quiz2),
+    },
+    RoleRequirement {
+        role: Roles::Taikou,
+        characters: 7_500_000,
+        quiz_role: None,
+    },
+    RoleRequirement {
+        role: Roles::Ousama,
+        characters: 10_000_000,
+        quiz_role: None,
+    },
+    RoleRequirement {
+        role: Roles::Texnnou,
+        characters: 15_000_000,
+        quiz_role: None,
+    },
+    RoleRequirement {
+        role: Roles::Chisen,
+        characters: 25_000_000,
+        quiz_role: Some(QuizRoles::Quiz3),
+    },
+    RoleRequirement {
+        role: Roles::Texnnou,
+        characters: 50_000_000,
+        quiz_role: Some(QuizRoles::Quiz4),
+    },
+    RoleRequirement {
+        role: Roles::Jouzu,
+        characters: 100_000_000,
+        quiz_role: Some(QuizRoles::Quiz5),
+    },
+];
+
 impl Roles {
     pub fn to_string(&self) -> String {
         let string = match self {
@@ -180,28 +352,13 @@ impl Roles {
         quiz_roles: &Vec<QuizRoles>,
         characters: i32,
     ) -> Option<Roles> {
-        // Define role requirements
-        let requirements = [
-            (Roles::Heimin, 100_000, None),
-            (Roles::Danshaku, 500_000, Some(QuizRoles::Quiz1)),
-            (Roles::Shishaku, 1_000_000, None),
-            (Roles::Hakushaku, 2_000_000, None),
-            (Roles::SourouKoushaku, 3_500_000, None),
-            (Roles::OoyakeKoushaku, 5_000_000, Some(QuizRoles::Quiz2)),
-            (Roles::Taikou, 7_500_000, None),
-            (Roles::Ousama, 10_000_000, None),
-            (Roles::Texnnou, 15_000_000, None),
-            (Roles::Chisen, 25_000_000, Some(QuizRoles::Quiz3)),
-            (Roles::Texnnou, 50_000_000, Some(QuizRoles::Quiz4)),
-            (Roles::Jouzu, 100_000_000, Some(QuizRoles::Quiz5)),
-        ];
-
         // Check for the highest eligible role by iterating from the last element
-        for (role, char_count, quiz_requirement) in requirements.iter().rev() {
-            if characters >= *char_count
-                && (quiz_requirement.is_none() || quiz_roles.contains(&quiz_requirement.unwrap()))
+        for requirement in ROLE_REQUIREMENTS.iter().rev() {
+            if characters >= requirement.characters
+                && (requirement.quiz_role.is_none()
+                    || quiz_roles.contains(&requirement.quiz_role.unwrap()))
             {
-                return Some(role.clone());
+                return Some(requirement.role.clone());
             }
         }
         None
