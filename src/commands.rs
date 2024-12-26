@@ -164,21 +164,13 @@ pub async fn history(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-/// Shows the leaderboard.
-#[poise::command(slash_command)]
-pub async fn leaderboard(
-    ctx: Context<'_>,
-    #[description = "The page number of the leaderboard to display. Defaults to the first page."]
-    page: Option<usize>,
-) -> Result<(), Error> {
-    let page_number = page.unwrap_or(1).saturating_sub(1);
-
+fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: usize) -> Result<CreateEmbed, Error> {
     let (users, rank, users_count, stats) = {
         let mut connection = ctx.data().connection.lock().unwrap();
         let tx = connection.transaction().map_err(|e| e.to_string())?;
         let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
 
-        let users = repository.fetch_paginated_users_by_characters(page_number)?;
+        let users = repository.fetch_paginated_users_by_characters(page)?;
         let stats = repository.get_statistics(ctx.author().id)?;
         let rank = match &stats {
             Some(stats) => Some(repository.get_rank(stats)?),
@@ -200,40 +192,53 @@ pub async fn leaderboard(
         None => "You don't have any characters logged yet.".to_string(),
     };
 
-    let mut embed_builder = CreateEmbed::default()
+    // there are 15 data per page
+    let total_pages = users_count.div_ceil(15);
+    let embed_builder = CreateEmbed::default()
         .title("Leaderboard")
         .description(format!(
             "Displaying page {} of {}.\n{}",
-            page_number + 1,
-            users_count.div_ceil(15),
+            page + 1,
+            total_pages,
             rank_line
         ));
 
     let mut line = "".to_owned();
     for (index, user) in users.iter().enumerate() {
-        let discord_user = user.get_user_id().to_user(ctx).await?;
-
         line += &format!(
-            "{}. {}: {} characters.\n",
+            "{}. <@{}>: {} characters.\n",
             index + 1,
-            discord_user.display_name(),
+            user.get_user_id(),
             format_with_commas(user.total_characters)
         );
     }
 
     if line.is_empty() {
-        line = format!("No users found for page {}.", page_number + 1)
+        line = format!("No users found for page {}.", page + 1)
     }
 
-    embed_builder =
-        embed_builder
-            .field("Top Immersers", line, false)
-            .footer(CreateEmbedFooter::new(
-                "See /help for a list of commands, and /usage for an explanation on what I can do.",
-            ));
+    Ok(embed_builder
+        .field("Top Immersers", line, false)
+        .footer(CreateEmbedFooter::new(
+            "See /help for a list of commands, and /usage for an explanation on what I can do.",
+        )))
+}
 
-    ctx.send(CreateReply::default().embed(embed_builder))
-        .await?;
+/// Shows the leaderboard.
+#[poise::command(slash_command)]
+pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
+    let total_pages = {
+        let mut connection = ctx.data().connection.lock().unwrap();
+        let tx = connection.transaction().map_err(|e| e.to_string())?;
+        let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
+
+        let users_count = repository.get_total_users()?;
+        tx.commit()?;
+        (users_count + 14) / 15
+    };
+
+    paginate(ctx, make_leaderboard_embed_by_page, total_pages).await?;
+
     Ok(())
 }
 
@@ -285,49 +290,64 @@ Quiz 5 (上手): `k!quiz stations_full 100 nd mmq=4 font=5 atl=20`")
     Ok(())
 }
 
-// Vote for something
-// #[poise::command(prefix_command, slash_command)]
-// pub async fn vote(
-//     ctx: Context<'_>,
-//     #[description = "What to vote for"] choice: String,
-// ) -> Result<(), Error> {
-//     // Lock the Mutex in a block {} so the Mutex isn't locked across an await point
-//     let num_votes = {
-//         let mut hash_map = ctx.data().votes.lock().unwrap();
-//         let num_votes = hash_map.entry(choice.clone()).or_default();
-//         *num_votes += 1;
-//         *num_votes
-//     };
+pub async fn paginate(
+    ctx: Context<'_>,
+    page_fetch_function: impl Fn(Context<'_>, usize) -> Result<CreateEmbed, Error>,
+    length: usize,
+) -> Result<(), Error> {
+    // Define some unique identifiers for the navigation buttons
+    let ctx_id = ctx.id();
+    let prev_button_id = format!("{}prev", ctx_id);
+    let next_button_id = format!("{}next", ctx_id);
 
-//     let response = format!("Successfully voted for {choice}. {choice} now has {num_votes} votes!");
-//     ctx.say(response).await?;
-//     Ok(())
-// }
+    // Send the embed with the first page as content
+    let reply = {
+        let components = serenity::builder::CreateActionRow::Buttons(vec![
+            serenity::builder::CreateButton::new(&prev_button_id).emoji('◀'),
+            serenity::builder::CreateButton::new(&next_button_id).emoji('▶'),
+        ]);
 
-// #[poise::command(prefix_command, track_edits, aliases("votes"), slash_command)]
-// pub async fn getvotes(
-//     ctx: Context<'_>,
-//     #[description = "Choice to retrieve votes for"] choice: Option<String>,
-// ) -> Result<(), Error> {
-//     if let Some(choice) = choice {
-//         let num_votes = *ctx.data().votes.lock().unwrap().get(&choice).unwrap_or(&0);
-//         let response = match num_votes {
-//             0 => format!("Nobody has voted for {} yet", choice),
-//             _ => format!("{} people have voted for {}", num_votes, choice),
-//         };
-//         ctx.say(response).await?;
-//     } else {
-//         let mut response = String::new();
-//         for (choice, num_votes) in ctx.data().votes.lock().unwrap().iter() {
-//             response += &format!("{}: {} votes", choice, num_votes);
-//         }
+        CreateReply::default()
+            .embed(page_fetch_function(ctx, 0)?)
+            .components(vec![components])
+    };
 
-//         if response.is_empty() {
-//             response += "Nobody has voted for anything yet :(";
-//         }
+    ctx.send(reply).await?;
 
-//         ctx.say(response).await?;
-//     };
+    // Loop through incoming interactions with the navigation buttons
+    let mut current_page = 0;
+    while let Some(press) = serenity::collector::ComponentInteractionCollector::new(ctx)
+        // We defined our button IDs to start with `ctx_id`. If they don't, some other command's
+        // button was pressed
+        .filter(move |press| press.data.custom_id.starts_with(&ctx_id.to_string()))
+        // Timeout when no navigation button has been pressed for 24 hours
+        .timeout(std::time::Duration::from_secs(3600 * 24))
+        .await
+    {
+        // Depending on which button was pressed, go to next or previous page
+        if press.data.custom_id == next_button_id {
+            current_page += 1;
+            if current_page >= length {
+                current_page = 0;
+            }
+        } else if press.data.custom_id == prev_button_id {
+            current_page = current_page.checked_sub(1).unwrap_or(length - 1);
+        } else {
+            // This is an unrelated button interaction
+            continue;
+        }
 
-//     Ok(())
-// }
+        // Update the message with the new page contents
+        press
+            .create_response(
+                ctx.serenity_context(),
+                serenity::builder::CreateInteractionResponse::UpdateMessage(
+                    serenity::builder::CreateInteractionResponseMessage::new()
+                        .embed(page_fetch_function(ctx, current_page)?),
+                ),
+            )
+            .await?;
+    }
+
+    Ok(())
+}

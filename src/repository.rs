@@ -27,7 +27,7 @@ pub trait CharacterStatisticsRepository {
         page_number: usize,
     ) -> Result<Vec<CharacterStatistics>, Box<dyn Error + Sync + Send>>;
 
-    fn get_total_users(&mut self) -> Result<u32, crate::Error>;
+    fn get_total_users(&mut self) -> Result<usize, crate::Error>;
 
     fn get_log_entries(
         &mut self,
@@ -215,7 +215,7 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository<'_> {
         Ok(rank)
     }
 
-    fn get_total_users(&mut self) -> Result<u32, crate::Error> {
+    fn get_total_users(&mut self) -> Result<usize, crate::Error> {
         let mut stmt = self.transaction.prepare(
             "
             SELECT COUNT(*) 
@@ -223,7 +223,7 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository<'_> {
             ",
         )?;
 
-        let count: u32 = stmt.query_row([], |row| row.get(0))?;
+        let count: usize = stmt.query_row([], |row| row.get(0))?;
         Ok(count)
     }
 }
