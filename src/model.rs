@@ -19,14 +19,7 @@ pub struct CharacterStatistics {
 }
 
 impl CharacterStatistics {
-    pub fn new(user_id: UserId) -> CharacterStatistics {
-        CharacterStatistics {
-            total_characters: 0,
-            user_id,
-        }
-    }
-
-    pub fn with_total_characters(user_id: UserId, total_characters: i32) -> CharacterStatistics {
+    pub fn new(user_id: UserId, total_characters: i32) -> CharacterStatistics {
         CharacterStatistics {
             total_characters,
             user_id,
@@ -73,4 +66,3 @@ impl CharacterLogEntry {
         }
     }
 }
-

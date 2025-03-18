@@ -2,6 +2,7 @@ use poise::CreateReply;
 use serenity::all::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter};
 
 use crate::{
+    constants::{LEADERBOARD_PAGE_SIZE, LOG_ENTRY_PAGE_SIZE},
     repository::{CharacterStatisticsRepository, SQLiteCharacterStatisticsRepository},
     roles::UserRoles,
     utils::format_with_commas,
@@ -120,22 +121,20 @@ You can track characters read from manga by using [this bookmarklet](https://git
     Ok(())
 }
 
-/// Shows your latest log history.
-#[poise::command(slash_command)]
-pub async fn history(ctx: Context<'_>) -> Result<(), Error> {
+fn make_history_embed_by_page(ctx: Context<'_>, page: u64) -> Result<CreateEmbed, Error> {
     let log_entries = {
         let mut connection = ctx.data().connection.lock().unwrap();
         let tx = connection.transaction().map_err(|e| e.to_string())?;
         let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
 
         let user_id = ctx.author().id;
-        let entries = repository.get_log_entries(user_id)?;
+        let entries = repository.get_paginated_log_entries_by_time(user_id, page)?;
         tx.commit()?;
 
         entries
     };
 
-    let mut embed_builder = CreateEmbed::default()
+    let embed_builder = CreateEmbed::default()
         .author(CreateEmbedAuthor::new("Bread"))
         .title("Immersion Tracking Bot");
 
@@ -154,53 +153,55 @@ pub async fn history(ctx: Context<'_>) -> Result<(), Error> {
         );
     }
 
-    embed_builder = embed_builder
+    Ok(embed_builder
         .description(lines)
         .footer(CreateEmbedFooter::new(
             "See /help for a list of commands, and /usage for an explanation on what I can do.",
-        ));
-    ctx.send(CreateReply::default().embed(embed_builder))
-        .await?;
+        )))
+}
+
+/// Shows your latest log history.
+#[poise::command(slash_command)]
+pub async fn history(ctx: Context<'_>) -> Result<(), Error> {
+    let length = {
+        let mut connection = ctx.data().connection.lock().unwrap();
+        let tx = connection.transaction().map_err(|e| e.to_string())?;
+        let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
+
+        let user_id = ctx.author().id;
+        let entries = repository.get_total_log_entries(user_id)?;
+        tx.commit()?;
+
+        entries.div_ceil(LOG_ENTRY_PAGE_SIZE)
+    };
+
+    paginate(ctx, make_history_embed_by_page, length).await?;
+
     Ok(())
 }
 
-fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: usize) -> Result<CreateEmbed, Error> {
+fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<CreateEmbed, Error> {
     let (users, rank, users_count, stats) = {
         let mut connection = ctx.data().connection.lock().unwrap();
         let tx = connection.transaction().map_err(|e| e.to_string())?;
         let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
 
-        let users = repository.fetch_paginated_users_by_characters(page)?;
+        let users = repository.get_paginated_users_by_characters(page)?;
         let stats = repository.get_statistics(ctx.author().id)?;
-        let rank = match &stats {
-            Some(stats) => Some(repository.get_rank(stats)?),
-            None => None,
-        };
+        let rank = repository.get_rank(&stats)?;
 
         let users_count = repository.get_total_users()?;
         tx.commit()?;
         (users, rank, users_count, stats)
     };
 
-    let rank_line = match stats {
-        Some(stats) => format!(
-            "You are currently rank {} of {}, with {} total characters.",
-            rank.unwrap(),
-            users_count,
-            stats.total_characters
-        ),
-        None => "You don't have any characters logged yet.".to_string(),
-    };
-
     // there are 15 data per page
     let total_pages = users_count.div_ceil(15);
     let embed_builder = CreateEmbed::default()
-        .title("Leaderboard")
+        .title(format!("Leaderboard ({}/{}).", page + 1, total_pages))
         .description(format!(
-            "Displaying page {} of {}.\n{}",
-            page + 1,
-            total_pages,
-            rank_line
+            "You are currently rank {} of {}, with {} total characters.",
+            rank, users_count, stats.total_characters
         ));
 
     let mut line = "".to_owned();
@@ -234,7 +235,8 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
 
         let users_count = repository.get_total_users()?;
         tx.commit()?;
-        (users_count + 14) / 15
+
+        users_count.div_ceil(LEADERBOARD_PAGE_SIZE)
     };
 
     paginate(ctx, make_leaderboard_embed_by_page, total_pages).await?;
@@ -292,8 +294,8 @@ Quiz 5 (上手): `k!quiz stations_full 100 nd mmq=4 font=5 atl=20`")
 
 pub async fn paginate(
     ctx: Context<'_>,
-    page_fetch_function: impl Fn(Context<'_>, usize) -> Result<CreateEmbed, Error>,
-    length: usize,
+    page_fetch_function: impl Fn(Context<'_>, u64) -> Result<CreateEmbed, Error>,
+    length: u64,
 ) -> Result<(), Error> {
     // Define some unique identifiers for the navigation buttons
     let ctx_id = ctx.id();
@@ -303,8 +305,8 @@ pub async fn paginate(
     // Send the embed with the first page as content
     let reply = {
         let components = serenity::builder::CreateActionRow::Buttons(vec![
-            serenity::builder::CreateButton::new(&prev_button_id).emoji('◀'),
-            serenity::builder::CreateButton::new(&next_button_id).emoji('▶'),
+            serenity::builder::CreateButton::new(&prev_button_id).label("前"),
+            serenity::builder::CreateButton::new(&next_button_id).label("次"),
         ]);
 
         CreateReply::default()

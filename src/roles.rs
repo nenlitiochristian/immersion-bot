@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::LazyLock};
 
 use serenity::all::{Message, Role, RoleId, UserId};
 
@@ -44,20 +44,26 @@ impl UserRoles {
         let characters = statistics.total_characters;
         let new_role = Roles::from_characters_and_quiz_roles(&self.quizzes, characters);
 
-        // user shouldn't have any roles, do nothing
-        if new_role.is_none() && self.roles.is_empty() {
+        // user role changed, we need to clear the old ones
+        let guild = ctx.guild().unwrap().clone(); // Ensure we are in a guild
+        let user = ctx.author_member().await.unwrap();
+
+        // user shouldn't have any roles, clear existing ones if exists
+        if new_role.is_none() {
+            for role in &self.roles {
+                let guild_role = guild.role_by_name(&role.to_string()).unwrap();
+                user.remove_role(ctx, guild_role.id).await?;
+            }
             return Ok(());
         }
 
-        let new_role = new_role.unwrap();
         // user's role didn't change, do nothing
+        let new_role = new_role.unwrap();
         if self.roles.iter().any(|role| role == &new_role) {
             return Ok(());
         }
 
-        // user role changed, we need to clear the old ones
-        let guild = ctx.guild().unwrap().clone(); // Ensure we are in a guild
-        let user = ctx.author_member().await.unwrap();
+        // user's role did change, clear the previous ones and give them the correct role
         for role in &self.roles {
             let guild_role = guild.role_by_name(&role.to_string()).unwrap();
             user.remove_role(ctx, guild_role.id).await?;
@@ -81,43 +87,48 @@ pub enum QuizRoles {
 #[derive(Debug)]
 pub struct QuizRequirement {
     pub quiz_role: QuizRoles,
-    pub quiz_name: &'static str,
     pub score_limit: i32,
     pub max_missed_questions: i32,
+    pub quiz_names: Vec<String>,
 }
 
-pub static QUIZ_REQUIREMENTS: [QuizRequirement; 5] = [
-    QuizRequirement {
-        quiz_role: QuizRoles::Quiz1,
-        quiz_name: "pq_1",
-        score_limit: 15,
-        max_missed_questions: 4,
-    },
-    QuizRequirement {
-        quiz_role: QuizRoles::Quiz2,
-        quiz_name: "pq_2",
-        score_limit: 20,
-        max_missed_questions: 4,
-    },
-    QuizRequirement {
-        quiz_role: QuizRoles::Quiz3,
-        quiz_name: "pq_3",
-        score_limit: 20,
-        max_missed_questions: 4,
-    },
-    QuizRequirement {
-        quiz_role: QuizRoles::Quiz4,
-        quiz_name: "pq_4",
-        score_limit: 30,
-        max_missed_questions: 4,
-    },
-    QuizRequirement {
-        quiz_role: QuizRoles::Quiz5,
-        quiz_name: "stations_full",
-        score_limit: 100,
-        max_missed_questions: 4,
-    },
-];
+pub static QUIZ_REQUIREMENTS: LazyLock<Vec<QuizRequirement>> = LazyLock::new(|| {
+    vec![
+        QuizRequirement {
+            quiz_role: QuizRoles::Quiz1,
+            score_limit: 15,
+            max_missed_questions: 4,
+            quiz_names: vec!["pq_1".to_string()],
+        },
+        QuizRequirement {
+            quiz_role: QuizRoles::Quiz2,
+            score_limit: 20,
+            max_missed_questions: 4,
+            quiz_names: vec!["pq_2".to_string()],
+        },
+        QuizRequirement {
+            quiz_role: QuizRoles::Quiz3,
+            score_limit: 20,
+            max_missed_questions: 4,
+            quiz_names: vec!["pq-3".to_string()],
+        },
+        QuizRequirement {
+            quiz_role: QuizRoles::Quiz4,
+            score_limit: 30,
+            max_missed_questions: 4,
+            quiz_names: "pq_4+animals+bugs+fish+plants+birds+vegetables+yojijukugo+countries"
+                .split('+')
+                .map(|str| str.to_string())
+                .collect(),
+        },
+        QuizRequirement {
+            quiz_role: QuizRoles::Quiz5,
+            score_limit: 100,
+            max_missed_questions: 4,
+            quiz_names: vec!["stations_full".to_string()],
+        },
+    ]
+});
 
 impl QuizRoles {
     pub fn to_string(&self) -> String {
@@ -174,18 +185,23 @@ impl QuizRoles {
                 let response = data.http_client.get(api_url).send().await?;
                 if response.status().is_success() {
                     let quiz_data = response.json::<QuizData>().await?;
-
-                    if quiz_data.decks.len() != 1 {
-                        // we don't care, it's not our quiz deck, there needs to be only 1 for the attempt to be valid
-                        continue;
-                    }
-
-                    let quiz_name = &quiz_data.decks[0].short_name;
-
-                    // we only care if the quiz is one of the quizzes needed for the role
-                    let current_quiz = QUIZ_REQUIREMENTS
+                    let mut quiz_deck_names: Vec<String> = quiz_data
+                        .decks
                         .iter()
-                        .find(|requirement| requirement.quiz_name == quiz_name);
+                        .map(|deck| deck.short_name.to_owned())
+                        .collect();
+                    quiz_deck_names.sort();
+
+                    // we want to know if the decks taken perfectly match any quiz role requirement
+                    // we sort them first to make sure both has the same order
+                    // quiz_deck_names is already sorted
+                    let current_quiz = QUIZ_REQUIREMENTS.iter().find(|requirement| {
+                        let mut sorted1 = requirement.quiz_names.clone();
+                        sorted1.sort();
+                        sorted1 == quiz_deck_names
+                    });
+
+                    // we do not care about this quiz if it doesn't match the decks needed for the quiz roles
                     if current_quiz.is_none() {
                         continue;
                     }
