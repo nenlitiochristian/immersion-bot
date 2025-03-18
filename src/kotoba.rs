@@ -8,9 +8,6 @@ pub struct QuizData {
     pub decks: Vec<Deck>,
     #[serde(rename = "isLoaded")]
     pub is_loaded: bool,
-    #[serde(rename = "rawStartCommand")]
-    pub raw_start_command: String,
-    pub questions: Vec<Question>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -86,11 +83,6 @@ pub struct Deck {
     pub short_name: String,
     #[serde(rename = "uniqueId")]
     pub unique_id: String,
-    pub mc: bool,
-    #[serde(rename = "internetDeck")]
-    pub internet_deck: bool,
-    #[serde(rename = "appearanceWeight")]
-    pub appearance_weight: i32,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -100,14 +92,5 @@ pub struct Question {
     pub question: String,
     pub answers: Vec<String>,
     pub comment: String,
-    #[serde(rename = "canCopyToCustomDeck")]
-    pub can_copy_to_custom_deck: bool,
-    #[serde(rename = "questionCreationStrategy")]
-    pub question_creation_strategy: String,
-    pub instructions: String,
-    #[serde(rename = "linkQuestion")]
-    pub link_question: bool,
-    pub uri: String,
-    #[serde(rename = "correctAnswerers")]
     pub correct_answerers: Vec<String>,
 }

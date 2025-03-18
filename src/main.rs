@@ -127,7 +127,10 @@ async fn event_handler(
 ) -> Result<(), Error> {
     match event {
         serenity::FullEvent::Message { new_message } => {
-            QuizRoles::handle_quiz_roles(ctx, new_message, data).await?;
+            let result = QuizRoles::handle_quiz_roles(ctx, new_message, data).await;
+            if result.is_err() {
+                println!("Handle quiz role error: {}", result.unwrap_err());
+            }
         }
         _ => {}
     }

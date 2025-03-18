@@ -305,8 +305,8 @@ pub async fn paginate(
     // Send the embed with the first page as content
     let reply = {
         let components = serenity::builder::CreateActionRow::Buttons(vec![
-            serenity::builder::CreateButton::new(&prev_button_id).label("前"),
-            serenity::builder::CreateButton::new(&next_button_id).label("次"),
+            serenity::builder::CreateButton::new(&prev_button_id).label("Prev"),
+            serenity::builder::CreateButton::new(&next_button_id).label("Next"),
         ]);
 
         CreateReply::default()
