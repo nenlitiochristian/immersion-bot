@@ -3,19 +3,21 @@
 mod commands;
 mod constants;
 mod kotoba;
+mod migrate;
 mod model;
 mod repository;
 mod roles;
 mod utils;
 
 use dotenv::dotenv;
+use migrate::{get_json_data, migrate};
 use model::Data;
 use poise::serenity_prelude as serenity;
 use reqwest::Client;
 use roles::QuizRoles;
 use rusqlite::Connection;
 use std::{
-    env::var,
+    env::{self, var},
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -174,12 +176,31 @@ CREATE TABLE IF NOT EXISTS CharacterLogEntry (
 async fn main() {
     dotenv().ok();
 
-    let connection = setup_sqlite_connection().expect("Failed to open an SQLite connection!");
+    let mut connection = setup_sqlite_connection().expect("Failed to open an SQLite connection!");
     let http_client = Client::new();
+
+    // migrate old json data (if needed)
+    let args: Vec<String> = env::args().collect();
+    if args.len() > 2 && args[1] == "--migrate" {
+        let path = &args[2];
+        println!("Migrating file: {}", path);
+        let result = handle_migrate(&mut connection, path);
+        match result {
+            Err(error) => {
+                println!("Failed to migrate json data: {error}");
+            }
+            _ => (),
+        };
+    }
 
     let data = Data {
         connection: Mutex::new(connection),
         http_client,
     };
     setup_discord_bot(data).await
+}
+
+fn handle_migrate(connection: &mut Connection, path: &str) -> Result<(), Error> {
+    let old_data = get_json_data(path)?;
+    migrate(connection, old_data)
 }

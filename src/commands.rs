@@ -46,7 +46,7 @@ pub async fn log_characters(
         let user_id = ctx.author().id;
 
         let time = &ctx.created_at();
-        let data = repository.add_log_entry(user_id, characters, time, notes)?;
+        let data = repository.add_log_entry(user_id.get(), characters, time, notes)?;
         tx.commit()?;
 
         data
@@ -128,7 +128,7 @@ fn make_history_embed_by_page(ctx: Context<'_>, page: u64) -> Result<CreateEmbed
         let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
 
         let user_id = ctx.author().id;
-        let entries = repository.get_paginated_log_entries_by_time(user_id, page)?;
+        let entries = repository.get_paginated_log_entries_by_time(user_id.get(), page)?;
         tx.commit()?;
 
         entries
@@ -169,7 +169,7 @@ pub async fn history(ctx: Context<'_>) -> Result<(), Error> {
         let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
 
         let user_id = ctx.author().id;
-        let entries = repository.get_total_log_entries(user_id)?;
+        let entries = repository.get_total_log_entries(user_id.get())?;
         tx.commit()?;
 
         entries.div_ceil(LOG_ENTRY_PAGE_SIZE)
@@ -187,7 +187,7 @@ fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<CreateE
         let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
 
         let users = repository.get_paginated_users_by_characters(page)?;
-        let stats = repository.get_statistics(ctx.author().id)?;
+        let stats = repository.get_statistics(ctx.author().id.get())?;
         let rank = repository.get_rank(&stats)?;
 
         let users_count = repository.get_total_users()?;

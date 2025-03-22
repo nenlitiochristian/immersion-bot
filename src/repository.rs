@@ -4,22 +4,23 @@ use crate::{
     constants::{LEADERBOARD_PAGE_SIZE, LOG_ENTRY_PAGE_SIZE},
     Error,
 };
+use chrono::{DateTime, Utc};
 use rusqlite::{OptionalExtension, Transaction};
-use serenity::all::{Timestamp, UserId};
+use serenity::all::Timestamp;
 
 use crate::model::{CharacterLogEntry, CharacterStatistics};
 
 pub trait CharacterStatisticsRepository {
     fn add_log_entry(
         &mut self,
-        user_id: UserId,
+        user_id: u64,
         characters: i32,
-        time: &Timestamp,
+        time: &DateTime<Utc>,
         notes: Option<String>,
     ) -> Result<CharacterStatistics, Error>;
 
     /// Returns the total logged characters of a user. If the user doesn't exist in the db, this also inserts the user to the db.
-    fn get_statistics(&mut self, user_id: UserId) -> Result<CharacterStatistics, Error>;
+    fn get_statistics(&mut self, user_id: u64) -> Result<CharacterStatistics, Error>;
 
     fn get_rank(&mut self, statistics: &CharacterStatistics) -> Result<i32, Error>;
 
@@ -34,11 +35,11 @@ pub trait CharacterStatisticsRepository {
     /// Returns a list of log entries according to the (LOG_ENTRY_PAGE_SIZE constant), sorted by time created
     fn get_paginated_log_entries_by_time(
         &mut self,
-        user_id: UserId,
+        user_id: u64,
         page_number: u64,
     ) -> Result<Vec<CharacterLogEntry>, Error>;
 
-    fn get_total_log_entries(&mut self, user_id: UserId) -> Result<u64, Error>;
+    fn get_total_log_entries(&mut self, user_id: u64) -> Result<u64, Error>;
 }
 
 pub struct SQLiteCharacterStatisticsRepository<'conn> {
@@ -50,14 +51,13 @@ impl<'conn> SQLiteCharacterStatisticsRepository<'conn> {
         SQLiteCharacterStatisticsRepository { transaction }
     }
 
-    fn initialize_statistics(&mut self, user_id: UserId) -> Result<CharacterStatistics, Error> {
-        let id = user_id.get();
+    fn initialize_statistics(&mut self, user_id: u64) -> Result<CharacterStatistics, Error> {
         self.transaction.execute(
             "
         INSERT INTO CharacterStatistics (user_id, total_characters)
         VALUES (?1, ?2)
         ",
-            (id, 0),
+            (user_id, 0),
         )?;
         Ok(CharacterStatistics::new(user_id, 0))
     }
@@ -66,12 +66,11 @@ impl<'conn> SQLiteCharacterStatisticsRepository<'conn> {
 impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository<'_> {
     fn add_log_entry(
         &mut self,
-        user_id: UserId,
+        user_id: u64,
         characters: i32,
-        time: &Timestamp,
+        time: &DateTime<Utc>,
         notes: Option<String>,
     ) -> Result<CharacterStatistics, Error> {
-        let id = user_id.get();
         let old_statistics = self.get_statistics(user_id)?;
 
         let characters = if characters >= 0 {
@@ -87,7 +86,7 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository<'_> {
             INSERT INTO CharacterLogEntry (user_id, characters, time, notes)
             VALUES (?1, ?2, ?3, ?4);
             ",
-            (id, characters, time.unix_timestamp(), notes),
+            (user_id, characters, time.timestamp(), notes),
         )?;
 
         let new_statistics =
@@ -99,7 +98,7 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository<'_> {
     SET total_characters = ?1
     WHERE user_id = ?2;
         ",
-            (new_statistics.total_characters, id),
+            (new_statistics.total_characters, user_id),
         )?;
 
         Ok(new_statistics)
@@ -123,10 +122,7 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository<'_> {
         let rows = stmt.query_map([LEADERBOARD_PAGE_SIZE, offset], |row| {
             let user_id: u64 = row.get(0)?;
             let total_characters: i32 = row.get(1)?;
-            Ok(CharacterStatistics::new(
-                UserId::from(user_id),
-                total_characters,
-            ))
+            Ok(CharacterStatistics::new(user_id, total_characters))
         })?;
 
         let mut result = Vec::new();
@@ -139,7 +135,7 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository<'_> {
 
     fn get_paginated_log_entries_by_time(
         &mut self,
-        user_id: UserId,
+        user_id: u64,
         page_number: u64,
     ) -> Result<Vec<CharacterLogEntry>, Error> {
         let offset = page_number * LOG_ENTRY_PAGE_SIZE;
@@ -154,14 +150,14 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository<'_> {
             ",
         )?;
 
-        let rows = stmt.query_map([user_id.get(), LOG_ENTRY_PAGE_SIZE, offset], |row| {
+        let rows = stmt.query_map([user_id, LOG_ENTRY_PAGE_SIZE, offset], |row| {
             let user_id: u64 = row.get(1)?;
             let characters: i32 = row.get(2)?;
             let time: i64 = row.get(3)?;
             let notes: Option<String> = row.get(4)?;
 
             Ok(CharacterLogEntry::new(
-                UserId::new(user_id),
+                user_id,
                 characters,
                 &Timestamp::from_unix_timestamp(time).expect("Date conversion error!"),
                 notes,
@@ -176,8 +172,7 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository<'_> {
         Ok(result)
     }
 
-    fn get_statistics(&mut self, user_id: UserId) -> Result<CharacterStatistics, Error> {
-        let id = user_id.get();
+    fn get_statistics(&mut self, user_id: u64) -> Result<CharacterStatistics, Error> {
         let characters = self
             .transaction
             .query_row(
@@ -185,7 +180,7 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository<'_> {
         SELECT total_characters FROM CharacterStatistics
         WHERE user_id = ?1
         ",
-                [id],
+                [user_id],
                 |row| {
                     let c: i32 = row.get(0)?;
                     Ok(c)
@@ -229,7 +224,7 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository<'_> {
         Ok(count)
     }
 
-    fn get_total_log_entries(&mut self, user_id: UserId) -> Result<u64, Error> {
+    fn get_total_log_entries(&mut self, user_id: u64) -> Result<u64, Error> {
         let mut stmt = self.transaction.prepare(
             "
             SELECT COUNT(*) 
@@ -239,7 +234,7 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository<'_> {
             ",
         )?;
 
-        let count: u64 = stmt.query_row([user_id.get()], |row| row.get(0))?;
+        let count: u64 = stmt.query_row([user_id], |row| row.get(0))?;
         Ok(count)
     }
 }
