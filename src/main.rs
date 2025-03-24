@@ -56,6 +56,7 @@ async fn setup_discord_bot(data: Data) {
             commands::roles(),
             commands::leaderboard(),
             commands::quizzes(),
+            commands::edit_characters(),
         ],
         prefix_options: poise::PrefixFrameworkOptions {
             // commands only, no prefix messages

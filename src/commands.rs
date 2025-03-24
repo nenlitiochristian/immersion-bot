@@ -1,5 +1,5 @@
 use poise::CreateReply;
-use serenity::all::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter};
+use serenity::all::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter, Permissions, UserId};
 
 use crate::{
     constants::{LEADERBOARD_PAGE_SIZE, LOG_ENTRY_PAGE_SIZE},
@@ -66,6 +66,35 @@ pub async fn log_characters(
     Ok(())
 }
 
+/// Admin-only command to change any member's logs
+#[poise::command(slash_command, default_member_permissions = "ADMINISTRATOR")]
+pub async fn edit_characters(
+    ctx: Context<'_>,
+    #[description = "The targeted member"] user_id: UserId,
+    #[description = "The amount of characters read"] characters: i32,
+    #[description = "Extra information such as the title of the book or VN"] notes: Option<String>,
+) -> Result<(), Error> {
+    let data = {
+        let mut connection = ctx.data().connection.lock().unwrap();
+        let tx = connection.transaction().map_err(|e| e.to_string())?;
+        let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
+
+        let time = &ctx.created_at();
+        let data = repository.add_log_entry(user_id.get(), characters, time, notes)?;
+        tx.commit()?;
+
+        data
+    };
+
+    let response = format!(
+        "Logged {} characters. Total characters logged: {}.",
+        characters, data.total_characters
+    );
+
+    ctx.say(response).await?;
+    Ok(())
+}
+
 /// Explains how the bot works.
 #[poise::command(slash_command)]
 pub async fn usage(ctx: Context<'_>) -> Result<(), Error> {
@@ -105,14 +134,14 @@ It's recommended to create a Japanese-only account on [myanimelist](https://myan
 **Novels**  
 You can track characters read for novels by reading on [ttu reader](https://ttu-ebook.web.app/). You can convert your ebooks to epub using [calibre](https://calibre-ebook.com/). You can download webnovels to epub with [WebToEpub](https://github.com/dteviot/WebToEpub). You can also read/track webnovels with [Eminent Reader](https://github.com/cademcniven/Eminent-Reader).
 
-**Text Files**  
-You can track characters read from text files using [textReader](https://cademcniven.com/projects/textReader/). This is useful for things like [erovoice](https://dl.erovoice.us/) scripts.
+**Online Novels**  
+You can use [this userscript](https://greasyfork.org/en/scripts/512137-japanese-reading-tracker) to track characters read in popular Japanese web novels like [Syosetu](https://syosetu.com) and [Kakuyomu](https://kakuyomu.jp).
 
 **Visual Novels**  
-You can track characters read from visual novels using a [texthooker](https://anacreondjt.gitlab.io/texthooker.html). Follow the [TMW Guide](https://learnjapanese.moe/vn/) to learn how to set it up.
+You can track characters read from visual novels using a [texthooker](https://renji-xd.github.io/texthooker-ui/). Follow the [TMW Guide](https://learnjapanese.moe/vn/) to learn how to set it up.
 
 **Manga**  
-You can track characters read from manga by using [this bookmarklet](https://github.com/kha-white/mokuro/issues/4#issuecomment-1120349063) for [mokuro](https://github.com/kha-white/mokuro).")
+You can track characters read from manga by using [mokuro reader](https://reader.mokuro.app/), or which is a reader for [mokuro](https://github.com/kha-white/mokuro) files.")
         .footer(CreateEmbedFooter::new(
             "See /help for a list of commands, and /usage for an explanation on what I can do.",
         ));
