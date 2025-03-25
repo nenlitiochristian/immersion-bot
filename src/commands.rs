@@ -129,13 +129,13 @@ pub async fn how_to_track(ctx: Context<'_>) -> Result<(), Error> {
         .description("Track **only** characters read (whether that be novels, VNs, games, subtitles, scripts, etc.), **not** raw listening. **Do not** guess how much immersion you've done, only log exact numbers that you're sure of. Whenever possible, your character count should exclude special characters (like punctuation, etc). These rules don't exist to be unnecessarily rigid, they exist to keep everyone on a (measureably) even playing field. Don't spoil things for others.
 
 **Anime**  
-It's recommended to create a Japanese-only account on [myanimelist](https://myanimelist.net/) or a similar tracking site, which will show exactly how many episodes you've watched with JP subs. You can download Japanese subtitles from [kitsunekko](https://kitsunekko.net/dirlist.php?dir=subtitles%2Fjapanese%2F) and watch/mine with [animebook](https://cademcniven.com/posts/20210703/). You can find the exact number of characters in the show with [subtitle character counter](https://cademcniven.com/subtitleCharacterCounter.html).
+It's recommended to create a Japanese-only account on [myanimelist](https://myanimelist.net/) or a similar tracking site, which will show exactly how many episodes you've watched with JP subs. You can download Japanese subtitles from [jimaku](https://jimaku.cc/) and watch/mine with [animebook](https://cademcniven.com/posts/20210703/). You can find the exact number of characters in the show with [subtitle character counter](https://cademcniven.com/subtitleCharacterCounter.html).
 
 **Novels**  
-You can track characters read for novels by reading on [ttu reader](https://ttu-ebook.web.app/). You can convert your ebooks to epub using [calibre](https://calibre-ebook.com/). You can download webnovels to epub with [WebToEpub](https://github.com/dteviot/WebToEpub). You can also read/track webnovels with [Eminent Reader](https://github.com/cademcniven/Eminent-Reader).
+You can track characters read for novels by reading on [ttu reader](https://ttu-ebook.web.app/). You can convert your ebooks to epub using [calibre](https://calibre-ebook.com/). You can download webnovels to epub with [WebToEpub](https://github.com/dteviot/WebToEpub). 
 
-**Online Novels**  
-You can use [this userscript](https://greasyfork.org/en/scripts/512137-japanese-reading-tracker) to track characters read in popular Japanese web novels like [Syosetu](https://syosetu.com) and [Kakuyomu](https://kakuyomu.jp).
+**Web Novels**  
+You can use [this userscript](https://greasyfork.org/en/scripts/512137-japanese-reading-tracker) to track characters read in popular Japanese novel websites like [Syosetu](https://syosetu.com) and [Kakuyomu](https://kakuyomu.jp).
 
 **Visual Novels**  
 You can track characters read from visual novels using a [texthooker](https://renji-xd.github.io/texthooker-ui/). Follow the [TMW Guide](https://learnjapanese.moe/vn/) to learn how to set it up.

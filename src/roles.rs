@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::LazyLock};
 use serenity::all::{Message, Role, RoleId, UserId};
 
 use crate::{
-    constants::{self, QUIZ_FONT, QUIZ_TIME_LIMIT},
+    constants::{self, QUIZ_FONT, QUIZ_REQUIREMENTS, QUIZ_TIME_LIMIT},
     kotoba::QuizData,
     model::{CharacterStatistics, Data},
 };
@@ -91,51 +91,6 @@ pub struct QuizRequirement {
     pub max_missed_questions: i32,
     pub unique_ids: Vec<String>,
 }
-
-pub static QUIZ_REQUIREMENTS: LazyLock<Vec<QuizRequirement>> = LazyLock::new(|| {
-    vec![
-        QuizRequirement {
-            quiz_role: QuizRoles::Quiz1,
-            score_limit: 15,
-            max_missed_questions: 4,
-            unique_ids: vec!["281ebf61-e0aa-429e-a09f-f5b56079ee46".to_string()],
-        },
-        QuizRequirement {
-            quiz_role: QuizRoles::Quiz2,
-            score_limit: 20,
-            max_missed_questions: 4,
-            unique_ids: vec!["8982a22e-314d-4a08-a026-12e497299bb1".to_string()],
-        },
-        QuizRequirement {
-            quiz_role: QuizRoles::Quiz3,
-            score_limit: 20,
-            max_missed_questions: 4,
-            unique_ids: vec!["14c54eb0-f77d-4611-b974-c1e109ef09da".to_string()],
-        },
-        QuizRequirement {
-            quiz_role: QuizRoles::Quiz4,
-            score_limit: 1,
-            max_missed_questions: 4,
-            unique_ids: vec![
-                "2bef521f-512c-490d-924d-b00086c10f2d".to_string(),
-                "animals".to_string(),
-                "bugs".to_string(),
-                "fish".to_string(),
-                "plants".to_string(),
-                "birds".to_string(),
-                "vegetables".to_string(),
-                "yojijukugo".to_string(),
-                "countries".to_string(),
-            ],
-        },
-        QuizRequirement {
-            quiz_role: QuizRoles::Quiz5,
-            score_limit: 100,
-            max_missed_questions: 4,
-            unique_ids: vec!["stations_japan".to_string()],
-        },
-    ]
-});
 
 impl QuizRoles {
     pub fn to_string(&self) -> String {
