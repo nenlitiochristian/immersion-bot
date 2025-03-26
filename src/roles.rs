@@ -1,6 +1,6 @@
-use std::{collections::HashMap, sync::LazyLock};
+use std::collections::HashMap;
 
-use serenity::all::{Message, Role, RoleId, UserId};
+use serenity::all::{Guild, Member, Message, Role, RoleId, UserId};
 
 use crate::{
     constants::{self, QUIZ_FONT, QUIZ_REQUIREMENTS, QUIZ_TIME_LIMIT},
@@ -39,17 +39,15 @@ impl UserRoles {
     pub async fn update_role(
         &self,
         ctx: crate::Context<'_>,
+        guild: &Guild,
+        user: &Member,
         statistics: &CharacterStatistics,
     ) -> Result<(), crate::Error> {
         let characters = statistics.total_characters;
-        let new_role = Roles::from_characters_and_quiz_roles(&self.quizzes, characters);
-
-        // user role changed, we need to clear the old ones
-        let guild = ctx.guild().unwrap().clone(); // Ensure we are in a guild
-        let user = ctx.author_member().await.unwrap();
+        let current_role = Roles::from_characters_and_quiz_roles(&self.quizzes, characters);
 
         // user shouldn't have any roles, clear existing ones if exists
-        if new_role.is_none() {
+        if current_role.is_none() {
             for role in &self.roles {
                 let guild_role = guild.role_by_name(&role.to_string()).unwrap();
                 user.remove_role(ctx, guild_role.id).await?;
@@ -58,7 +56,7 @@ impl UserRoles {
         }
 
         // user's role didn't change, do nothing
-        let new_role = new_role.unwrap();
+        let new_role = current_role.unwrap();
         if self.roles.iter().any(|role| role == &new_role) {
             return Ok(());
         }
@@ -365,6 +363,23 @@ impl Roles {
             }
         }
         highest_role
+    }
+
+    pub fn next_role_requirement(
+        quiz_roles: &Vec<QuizRoles>,
+        characters: i32,
+    ) -> Option<RoleRequirement> {
+        for requirement in ROLE_REQUIREMENTS.iter() {
+            if characters < requirement.characters {
+                return Some(requirement.to_owned());
+            }
+            if let Some(quiz_role) = requirement.quiz_role {
+                if !quiz_roles.contains(&quiz_role) {
+                    return Some(requirement.to_owned());
+                }
+            }
+        }
+        None
     }
 
     pub fn from_string(input: &str) -> Option<Roles> {

@@ -1,10 +1,13 @@
+use std::{fmt::format, future::Future, time::Instant};
+
+use futures::future::join_all;
 use poise::CreateReply;
-use serenity::all::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter, Permissions, UserId};
+use serenity::all::{Color, CreateEmbed, CreateEmbedFooter, Member, UserId};
 
 use crate::{
     constants::{LEADERBOARD_PAGE_SIZE, LOG_ENTRY_PAGE_SIZE},
     repository::{CharacterStatisticsRepository, SQLiteCharacterStatisticsRepository},
-    roles::UserRoles,
+    roles::{Roles, UserRoles},
     utils::format_with_commas,
     Context, Error,
 };
@@ -38,7 +41,7 @@ pub async fn log_characters(
     #[description = "The amount of characters read"] characters: i32,
     #[description = "Extra information such as the title of the book or VN"] notes: Option<String>,
 ) -> Result<(), Error> {
-    let data = {
+    let (data, rank) = {
         let mut connection = ctx.data().connection.lock().unwrap();
         let tx = connection.transaction().map_err(|e| e.to_string())?;
         let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
@@ -47,22 +50,59 @@ pub async fn log_characters(
 
         let time = &ctx.created_at();
         let data = repository.add_log_entry(user_id.get(), characters, time, notes)?;
+        let rank = repository.get_rank(&data)?;
         tx.commit()?;
 
-        data
+        (data, rank)
     };
 
-    let user_roles = &ctx.author_member().await.unwrap().roles;
-    let guild_roles = &ctx.guild().unwrap().roles.clone();
+    let user = ctx.author_member().await.unwrap().into_owned();
+    let guild = ctx.guild().unwrap().to_owned();
+    let user_roles = &user.roles;
+    let guild_roles = &guild.roles.clone();
     let roles = UserRoles::new(user_roles, guild_roles);
-    roles.update_role(ctx, &data).await?;
+    roles.update_role(ctx, &guild, &user, &data).await?;
 
-    let response = format!(
-        "Logged {} characters. Total characters logged: {}.",
-        characters, data.total_characters
-    );
+    let current_role = Roles::from_characters_and_quiz_roles(&roles.quizzes, data.total_characters);
+    let current_role_message = match current_role {
+        Some(role) => format!("Current role is {}", role.to_string()),
+        None => "You currently don't have a role".to_owned(),
+    };
 
-    ctx.say(response).await?;
+    let next_role_message = if let Some(requirement) =
+        Roles::next_role_requirement(&roles.quizzes, data.total_characters)
+    {
+        let condition = data.total_characters < requirement.characters;
+        let message = if condition {
+            format!(
+                "{} more characters",
+                format_with_commas(data.total_characters)
+            )
+        } else {
+            format!("to pass {}", requirement.quiz_role.unwrap().to_string())
+        };
+        format!("For {} you need {}.", requirement.role.to_string(), message)
+    } else {
+        "You already have the highest role.".to_owned()
+    };
+
+    let embed = create_base_embed()
+        .title(format!(
+            "{} logged {} characters!",
+            user.user.display_name(),
+            format_with_commas(characters),
+        ))
+        .description(format!(
+            "Total characters logged: {}",
+            format_with_commas(data.total_characters)
+        ))
+        .field(
+            format!("You are currently rank {} on the leaderboard", rank),
+            format!("{}. {}", current_role_message, next_role_message),
+            false,
+        );
+
+    ctx.send(CreateReply::default().embed(embed)).await?;
     Ok(())
 }
 
@@ -74,35 +114,84 @@ pub async fn edit_characters(
     #[description = "The amount of characters read"] characters: i32,
     #[description = "Extra information such as the title of the book or VN"] notes: Option<String>,
 ) -> Result<(), Error> {
-    let data = {
+    let (data, rank) = {
         let mut connection = ctx.data().connection.lock().unwrap();
         let tx = connection.transaction().map_err(|e| e.to_string())?;
         let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
 
         let time = &ctx.created_at();
         let data = repository.add_log_entry(user_id.get(), characters, time, notes)?;
+        let rank = repository.get_rank(&data)?;
         tx.commit()?;
 
-        data
+        (data, rank)
     };
 
-    let response = format!(
-        "Logged {} characters. Total characters logged: {}.",
-        characters, data.total_characters
-    );
+    let guild = ctx.guild().unwrap().to_owned();
+    let member = guild.member(ctx, user_id).await?.into_owned();
+    let user_roles = &member.roles;
+    let guild_roles = &guild.roles.clone();
+    let roles = UserRoles::new(user_roles, guild_roles);
+    roles.update_role(ctx, &guild, &member, &data).await?;
 
-    ctx.say(response).await?;
+    let current_role = Roles::from_characters_and_quiz_roles(&roles.quizzes, data.total_characters);
+    let current_role_message = match current_role {
+        Some(role) => format!("Current role is {}", role.to_string()),
+        None => "You currently don't have a role".to_owned(),
+    };
+
+    let next_role_message = if let Some(requirement) =
+        Roles::next_role_requirement(&roles.quizzes, data.total_characters)
+    {
+        let condition = data.total_characters < requirement.characters;
+        let message = if condition {
+            format!(
+                "{} more characters",
+                format_with_commas(data.total_characters)
+            )
+        } else {
+            format!("to pass {}", requirement.quiz_role.unwrap().to_string())
+        };
+        format!("For {} you need {}.", requirement.role.to_string(), message)
+    } else {
+        "You already have the highest role.".to_owned()
+    };
+
+    let embed = create_base_embed()
+        .title(format!(
+            "{} logged {} characters!",
+            member.user.display_name(),
+            format_with_commas(characters),
+        ))
+        .description(format!(
+            "Total characters logged: {}",
+            format_with_commas(data.total_characters)
+        ))
+        .field(
+            format!("You are currently rank {} on the leaderboard", rank),
+            format!("{}. {}", current_role_message, next_role_message),
+            false,
+        );
+
+    ctx.send(CreateReply::default().embed(embed)).await?;
     Ok(())
+}
+
+fn create_base_embed() -> CreateEmbed {
+    CreateEmbed::default()
+        .footer(CreateEmbedFooter::new(
+            "See /help for a list of commands and /usage for an explanation on what I can do.",
+        ))
+        .color(Color::from_rgb(225, 178, 28))
 }
 
 /// Explains how the bot works.
 #[poise::command(slash_command)]
 pub async fn usage(ctx: Context<'_>) -> Result<(), Error> {
-    let embed = CreateEmbed::default()
-        .author(CreateEmbedAuthor::new("Bread"))
-        .title(format!("Immersion Tracking Bot"))
-
-        .description("This bot is for tracking characters read, **not** for listening immersion. That doesn't mean that listening is not important, but it's implied that you're spending an equal amount of time practicing listening as you are reading.
+    let embed = create_base_embed()
+        .title("How to use this bot")
+        .description(
+"This bot is for tracking characters read, **not** for listening immersion. That doesn't mean that listening is not important, but it's implied that you're spending an equal amount of time practicing listening as you are reading.
 Reading that you can track includes:
 
 1. Novels
@@ -111,10 +200,7 @@ Reading that you can track includes:
 4. Podcasts with a script
 5. Anything else in a similar vein (if you're unsure, ask an admin)
 
-Do **NOT** estimate your immersion, only log immersion that you are sure of the exact number of characters of. As you log your immersion, you will automatically receive roles based on how much you've done. While we would love to take your word for it, we can't be sure that everyone is honest. To counteract people who might lie about their immersion amount, certain roles will require a kotoba quiz in order to continue. The quiz should be straightforward if you've done the amount of immersion required for that role (with the exception being 天仙 and 上手, whose quizes are intentionally bullshit).")
-        .footer(CreateEmbedFooter::new(
-            "See /help for a list of commands, /how_to_track for further immersion tracking information, and /roles for roles.",
-        ));
+Do **NOT** estimate your immersion, only log immersion that you are sure of the exact number of characters of. As you log your immersion, you will automatically receive roles based on how much you've done. While we would love to take your word for it, we can't be sure that everyone is honest. To counteract people who might lie about their immersion amount, certain roles will require a kotoba quiz in order to continue. The quiz should be straightforward if you've done the amount of immersion required for that role (with the exception being 天仙 and 上手, whose quizes are intentionally bullshit).");
 
     ctx.send(CreateReply::default().embed(embed)).await?;
     Ok(())
@@ -123,9 +209,7 @@ Do **NOT** estimate your immersion, only log immersion that you are sure of the 
 /// Explains how to track your reading characters.
 #[poise::command(slash_command)]
 pub async fn how_to_track(ctx: Context<'_>) -> Result<(), Error> {
-    let embed = CreateEmbed::default()
-        .author(CreateEmbedAuthor::new("Bread"))
-        .title(format!("Immersion Tracking Bot"))
+    let embed = create_base_embed().title("How to track characters read")
         .description("Track **only** characters read (whether that be novels, VNs, games, subtitles, scripts, etc.), **not** raw listening. **Do not** guess how much immersion you've done, only log exact numbers that you're sure of. Whenever possible, your character count should exclude special characters (like punctuation, etc). These rules don't exist to be unnecessarily rigid, they exist to keep everyone on a (measureably) even playing field. Don't spoil things for others.
 
 **Anime**  
@@ -141,31 +225,31 @@ You can use [this userscript](https://greasyfork.org/en/scripts/512137-japanese-
 You can track characters read from visual novels using a [texthooker](https://renji-xd.github.io/texthooker-ui/). Follow the [TMW Guide](https://learnjapanese.moe/vn/) to learn how to set it up.
 
 **Manga**  
-You can track characters read from manga by using [mokuro reader](https://reader.mokuro.app/), or which is a reader for [mokuro](https://github.com/kha-white/mokuro) files.")
-        .footer(CreateEmbedFooter::new(
-            "See /help for a list of commands, and /usage for an explanation on what I can do.",
-        ));
+You can track characters read from manga by using [mokuro reader](https://reader.mokuro.app/), or which is a reader for [mokuro](https://github.com/kha-white/mokuro) files.");
 
     ctx.send(CreateReply::default().embed(embed)).await?;
     Ok(())
 }
 
-fn make_history_embed_by_page(ctx: Context<'_>, page: u64) -> Result<CreateEmbed, Error> {
-    let log_entries = {
+async fn make_history_embed_by_page(ctx: Context<'_>, page: u64) -> Result<CreateEmbed, Error> {
+    let (log_entries, total_count) = {
         let mut connection = ctx.data().connection.lock().unwrap();
         let tx = connection.transaction().map_err(|e| e.to_string())?;
         let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
 
         let user_id = ctx.author().id;
         let entries = repository.get_paginated_log_entries_by_time(user_id.get(), page)?;
+        let total_entry_count = repository.get_total_log_entries(user_id.get())?;
         tx.commit()?;
 
-        entries
+        (entries, total_entry_count)
     };
 
-    let embed_builder = CreateEmbed::default()
-        .author(CreateEmbedAuthor::new("Bread"))
-        .title("Immersion Tracking Bot");
+    let embed_builder = create_base_embed().title(format!(
+        "Log history (Page {} of {})",
+        page + 1,
+        (total_count / LOG_ENTRY_PAGE_SIZE) + 1
+    ));
 
     let mut lines = "".to_string();
     for history in log_entries {
@@ -177,16 +261,12 @@ fn make_history_embed_by_page(ctx: Context<'_>, page: u64) -> Result<CreateEmbed
         lines += &format!(
             "{}: {} characters | {}\n",
             time,
-            history.characters(),
+            format_with_commas(history.characters()),
             notes
         );
     }
 
-    Ok(embed_builder
-        .description(lines)
-        .footer(CreateEmbedFooter::new(
-            "See /help for a list of commands, and /usage for an explanation on what I can do.",
-        )))
+    Ok(embed_builder.description(lines))
 }
 
 /// Shows your latest log history.
@@ -209,7 +289,8 @@ pub async fn history(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<CreateEmbed, Error> {
+async fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<CreateEmbed, Error> {
+    let start = Instant::now();
     let (users, rank, users_count, stats) = {
         let mut connection = ctx.data().connection.lock().unwrap();
         let tx = connection.transaction().map_err(|e| e.to_string())?;
@@ -224,22 +305,47 @@ fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<CreateE
         (users, rank, users_count, stats)
     };
 
+    let guild = ctx.guild().unwrap().to_owned();
     // there are 15 data per page
     let total_pages = users_count.div_ceil(15);
-    let embed_builder = CreateEmbed::default()
-        .title(format!("Leaderboard ({}/{}).", page + 1, total_pages))
+    let embed_builder = create_base_embed()
+        .title(format!(
+            "Leaderboard (Page {} of {}).",
+            page + 1,
+            total_pages
+        ))
         .description(format!(
             "You are currently rank {} of {}, with {} total characters.",
-            rank, users_count, stats.total_characters
+            rank,
+            users_count,
+            format_with_commas(stats.total_characters)
         ));
 
+    let mut member_fetches = Vec::new();
+    for u in &users {
+        member_fetches.push(async {
+            let member = guild.member(ctx, u.get_user_id()).await;
+            (member, u.total_characters)
+        });
+    }
+
+    let member_tuples: Vec<(Member, i32)> = join_all(member_fetches)
+        .await
+        .into_iter()
+        .filter_map(|(member_result, total_characters)| {
+            member_result
+                .ok()
+                .map(|member| (member.into_owned(), total_characters))
+        })
+        .collect();
+
     let mut line = "".to_owned();
-    for (index, user) in users.iter().enumerate() {
+    for (index, tuple) in member_tuples.iter().enumerate() {
         line += &format!(
-            "{}. <@{}>: {} characters.\n",
+            "{}. {}: {} characters.\n",
             index + 1,
-            user.get_user_id(),
-            format_with_commas(user.total_characters)
+            tuple.0.user.display_name(),
+            format_with_commas(tuple.1)
         );
     }
 
@@ -247,11 +353,10 @@ fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<CreateE
         line = format!("No users found for page {}.", page + 1)
     }
 
-    Ok(embed_builder
-        .field("Top Immersers", line, false)
-        .footer(CreateEmbedFooter::new(
-            "See /help for a list of commands, and /usage for an explanation on what I can do.",
-        )))
+    let duration = start.elapsed();
+    println!("Execution time: {:?}", duration);
+
+    Ok(embed_builder.field("Top Immersers", line, false))
 }
 
 /// Shows the leaderboard.
@@ -276,10 +381,8 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
 /// Shows the list of roles available and how to get them.
 #[poise::command(slash_command)]
 pub async fn roles(ctx: Context<'_>) -> Result<(), Error> {
-    let embed = CreateEmbed::default()
-        .author(CreateEmbedAuthor::new("Bread"))
-        .title("Roles")
-        .description("平民 - 100,000 characters
+    let embed = create_base_embed().title("Roles").description(
+        "平民 - 100,000 characters
 男爵 - 500,000 characters (must pass quiz 1)
 子爵 - 1,000,000 characters
 伯爵 - 2,000,000 characters
@@ -290,10 +393,8 @@ pub async fn roles(ctx: Context<'_>) -> Result<(), Error> {
 天皇 - 15,000,000 characters
 地仙 - 25,000,000 characters (must pass quiz 3)
 天仙 - 50,000,000 characters (must pass quiz 4)
-上手 - 100,000,000 characters (must pass quiz 5)")
-        .footer(CreateEmbedFooter::new(
-            "See /help for a list of commands, /how_to_track for further immersion tracking information, and /roles for roles.",
-        ));
+上手 - 100,000,000 characters (must pass quiz 5)",
+    );
 
     ctx.send(CreateReply::default().embed(embed)).await?;
     Ok(())
@@ -302,8 +403,7 @@ pub async fn roles(ctx: Context<'_>) -> Result<(), Error> {
 /// Shows the list of quizzes you need to unlock certain roles.
 #[poise::command(slash_command)]
 pub async fn quizzes(ctx: Context<'_>) -> Result<(), Error> {
-    let embed = CreateEmbed::default()
-        .author(CreateEmbedAuthor::new("Bread"))
+    let embed = create_base_embed()
         .title("Quizzes")
         .description("Certain roles require you to pass a quiz (see /roles for more info). You're allowed to take the quiz as many times as you want. Take the quiz in #kotoba or #kotoba2. Quizzes must be taken in order (you can't skip quiz 1 and 2 by doing 3 first). 
         
@@ -312,20 +412,21 @@ pub async fn quizzes(ctx: Context<'_>) -> Result<(), Error> {
 Quiz 2 (公爵): `k!quiz pq_2 20 nd mmq=4 font=5 atl=20`
 Quiz 3 (地仙): `k!quiz pq_3 20 nd mmq=4 font=5 atl=20`
 Quiz 4 (天仙): `k!quiz pq_4+animals+bugs+fish+plants+birds+vegetables+yojijukugo+countries 30 nd mmq=4 font=5 atl=20`
-Quiz 5 (上手): `k!quiz stations_full 100 nd mmq=4 font=5 atl=20`")
-        .footer(CreateEmbedFooter::new(
-            "See /help for a list of commands, /how_to_track for further immersion tracking information, and /roles for roles.",
-        ));
+Quiz 5 (上手): `k!quiz stations_full 100 nd mmq=4 font=5 atl=20`");
 
     ctx.send(CreateReply::default().embed(embed)).await?;
     Ok(())
 }
 
-pub async fn paginate(
-    ctx: Context<'_>,
-    page_fetch_function: impl Fn(Context<'_>, u64) -> Result<CreateEmbed, Error>,
+pub async fn paginate<'a, F, Fut>(
+    ctx: Context<'a>,
+    page_fetch_function: F,
     length: u64,
-) -> Result<(), Error> {
+) -> Result<(), Error>
+where
+    F: Fn(Context<'a>, u64) -> Fut,
+    Fut: Future<Output = Result<CreateEmbed, Error>>,
+{
     // Define some unique identifiers for the navigation buttons
     let ctx_id = ctx.id();
     let prev_button_id = format!("{}prev", ctx_id);
@@ -339,7 +440,7 @@ pub async fn paginate(
         ]);
 
         CreateReply::default()
-            .embed(page_fetch_function(ctx, 0)?)
+            .embed(page_fetch_function(ctx, 0).await?)
             .components(vec![components])
     };
 
@@ -374,7 +475,7 @@ pub async fn paginate(
                 ctx.serenity_context(),
                 serenity::builder::CreateInteractionResponse::UpdateMessage(
                     serenity::builder::CreateInteractionResponseMessage::new()
-                        .embed(page_fetch_function(ctx, current_page)?),
+                        .embed(page_fetch_function(ctx, current_page).await?),
                 ),
             )
             .await?;
