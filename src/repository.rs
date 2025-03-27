@@ -164,13 +164,15 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository<'_> {
             characters.clamp(old_statistics.total_characters.neg(), 0)
         };
 
-        self.transaction.execute(
-            "
-            INSERT INTO CharacterLogEntry (user_id, characters, time, notes)
-            VALUES (?1, ?2, ?3, ?4);
-            ",
-            (user_id, characters, time.timestamp(), notes),
-        )?;
+        if characters > 0 || notes.clone().is_some_and(|n| !n.trim().is_empty()) {
+            self.transaction.execute(
+                "
+                INSERT INTO CharacterLogEntry (user_id, characters, time, notes)
+                VALUES (?1, ?2, ?3, ?4);
+                ",
+                (user_id, characters, time.timestamp(), notes),
+            )?;
+        }
 
         let new_statistics = CharacterStatistics::new(
             user_id,
