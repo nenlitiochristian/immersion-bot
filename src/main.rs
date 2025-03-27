@@ -229,7 +229,11 @@ async fn refresh_active_users(
         }
         for u in users.iter() {
             let member = members.get(&UserId::from(u.get_user_id()));
-            repository.set_active_status(u.get_user_id(), member.is_some(), None)?;
+            let name = match member {
+                None => None,
+                Some(member) => Some(member.user.display_name()),
+            };
+            repository.set_active_status(u.get_user_id(), member.is_some(), name)?;
         }
         page_number += 1;
     }
