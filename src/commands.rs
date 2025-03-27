@@ -60,7 +60,18 @@ pub async fn log_characters(
     let user_roles = &user.roles;
     let guild_roles = &guild.roles.clone();
     let roles = UserRoles::new(user_roles, guild_roles);
-    roles.update_role(ctx, &guild, &user, &data).await?;
+    let new_role = roles.update_role(ctx, &guild, &user, &data).await?;
+    if let Some(new_role) = new_role {
+        // role changed, if it's higher give a congratulations message
+        if !roles.roles.iter().all(|r| &new_role > r) {
+            ctx.say(format!(
+                "Congratulations {} for obtaining role: {}",
+                user.user.display_name(),
+                new_role.to_string()
+            ))
+            .await?;
+        }
+    }
 
     let current_role = Roles::from_characters_and_quiz_roles(&roles.quizzes, data.total_characters);
     let current_role_message = match current_role {
@@ -131,7 +142,18 @@ pub async fn edit_characters(
     let user_roles = &member.roles;
     let guild_roles = &guild.roles.clone();
     let roles = UserRoles::new(user_roles, guild_roles);
-    roles.update_role(ctx, &guild, &member, &data).await?;
+    let new_role = roles.update_role(ctx, &guild, &member, &data).await?;
+    if let Some(new_role) = new_role {
+        // role changed, if it's higher give a congratulations message
+        if roles.roles.iter().all(|r| &new_role > r) {
+            ctx.say(format!(
+                "Congratulations {} for obtaining role: {}",
+                member.user.display_name(),
+                new_role.to_string()
+            ))
+            .await?;
+        }
+    }
 
     let current_role = Roles::from_characters_and_quiz_roles(&roles.quizzes, data.total_characters);
     let current_role_message = match current_role {
@@ -299,7 +321,7 @@ async fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<C
         let stats = repository.get_statistics(ctx.author().id.get())?;
         let rank = repository.get_rank(&stats)?;
 
-        let users_count = repository.get_total_users()?;
+        let users_count = repository.get_total_active_users()?;
         tx.commit()?;
         (users, rank, users_count, stats)
     };
@@ -347,7 +369,7 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
         let tx = connection.transaction().map_err(|e| e.to_string())?;
         let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
 
-        let users_count = repository.get_total_users()?;
+        let users_count = repository.get_total_active_users()?;
         tx.commit()?;
 
         users_count.div_ceil(LEADERBOARD_PAGE_SIZE)
