@@ -9,7 +9,7 @@ mod repository;
 mod roles;
 mod utils;
 
-use ::serenity::all::{Member, UserId};
+use ::serenity::all::{Member, PartialGuild, UserId};
 use dotenv::dotenv;
 use migrate::{get_json_data, migrate};
 use model::Data;
@@ -78,20 +78,9 @@ async fn setup_discord_bot(data: Data) {
             })
         },
         // This code is run after a command if it was successful (returned Ok)
-        post_command: |ctx| {
-            Box::pin(async move {
-                println!("Executed command {}!", ctx.command().qualified_name);
-            })
-        },
+        post_command: |ctx| Box::pin(async move {}),
         // Every command invocation must pass this check to continue execution
-        command_check: Some(|ctx| {
-            Box::pin(async move {
-                if ctx.author().id == 123456789 {
-                    return Ok(false);
-                }
-                Ok(true)
-            })
-        }),
+        // command_check: Some(|ctx| Box::pin(async move { Ok(true) })),
 
         // Enforce command checks even for owners (enforced by default)
         // Set to true to bypass checks, which is useful for testing
@@ -113,8 +102,9 @@ async fn setup_discord_bot(data: Data) {
 
     let token: String = var("DISCORD_TOKEN")
         .expect("Missing `DISCORD_TOKEN` env var, see README for more information.");
-    let intents =
-        serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
+    let intents = serenity::GatewayIntents::non_privileged()
+        | serenity::GatewayIntents::MESSAGE_CONTENT
+        | serenity::GatewayIntents::GUILD_MEMBERS;
 
     let client = serenity::ClientBuilder::new(token, intents)
         .framework(framework)
@@ -130,43 +120,21 @@ async fn event_handler(
 ) -> Result<(), Error> {
     match event {
         serenity::FullEvent::Ready { data_about_bot } => {
+            println!("Running ready event");
             for guild in &data_about_bot.guilds {
-                if guild.unavailable {
-                    continue;
-                }
                 let partial_guild = guild.id.to_partial_guild(ctx).await?;
-                let mut after: Option<UserId> = None;
-                let mut members: HashMap<UserId, Member> = HashMap::with_capacity(2500);
-                loop {
-                    let temp_members = partial_guild.members(ctx, None, after).await?;
-                    if temp_members.is_empty() {
-                        break;
-                    }
-                    after = Some(temp_members.last().unwrap().user.id);
-                    for m in temp_members.into_iter() {
-                        members.insert(m.user.id, m);
-                    }
-                }
-
-                let mut conn = framework.user_data.connection.lock().unwrap();
-                let tx = conn.transaction()?;
-                let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
-
-                let mut page_number = 0;
-                loop {
-                    let users = repository.get_paginated_users_by_id(page_number)?;
-                    if users.is_empty() {
-                        break;
-                    }
-                    for u in users.iter() {
-                        let is_active = members.contains_key(&UserId::from(u.get_user_id()));
-                        repository.set_active_status(u.get_user_id(), is_active)?;
-                    }
-                    page_number += 1;
-                }
-
-                tx.commit()?;
+                reload_active_users(ctx, framework.user_data, partial_guild).await?;
             }
+        }
+        serenity::FullEvent::GuildMemberAddition { new_member } => {
+            let mut conn = framework.user_data.connection.lock().unwrap();
+            let tx = conn.transaction()?;
+            let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
+            if repository.exists(new_member.user.id.get())? {
+                repository.set_active_status(new_member.user.id.get(), true)?;
+                println!("{} returned", new_member.display_name());
+            }
+            tx.commit()?;
         }
         serenity::FullEvent::GuildMemberRemoval {
             guild_id: _,
@@ -177,6 +145,7 @@ async fn event_handler(
             let tx = conn.transaction()?;
             let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
             repository.set_active_status(user.id.get(), false)?;
+            println!("{} left", user.display_name());
             tx.commit()?;
         }
         serenity::FullEvent::Message { new_message } => {
@@ -190,6 +159,46 @@ async fn event_handler(
     Ok(())
 }
 
+async fn reload_active_users(
+    ctx: &serenity::Context,
+    user_data: &Data,
+    guild: PartialGuild,
+) -> Result<(), Error> {
+    println!("Reloading active users...");
+    let mut after: Option<UserId> = None;
+    let mut members: HashMap<UserId, Member> = HashMap::with_capacity(2500);
+    loop {
+        let temp_members = guild.members(ctx, None, after).await?;
+        if temp_members.is_empty() {
+            break;
+        }
+        after = Some(temp_members.last().unwrap().user.id);
+        for m in temp_members.into_iter() {
+            members.insert(m.user.id, m);
+        }
+    }
+
+    let mut conn = user_data.connection.lock().unwrap();
+    let tx = conn.transaction()?;
+    let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
+
+    let mut page_number = 0;
+    loop {
+        let users = repository.get_paginated_users_by_id(page_number)?;
+        if users.is_empty() {
+            break;
+        }
+        for u in users.iter() {
+            let is_active = members.contains_key(&UserId::from(u.get_user_id()));
+            repository.set_active_status(u.get_user_id(), is_active)?;
+        }
+        page_number += 1;
+    }
+
+    tx.commit()?;
+    Ok(())
+}
+
 fn setup_sqlite_connection() -> rusqlite::Result<Connection> {
     let connection = Connection::open("perdition.db")?;
 
@@ -199,7 +208,7 @@ fn setup_sqlite_connection() -> rusqlite::Result<Connection> {
 -- Create the CharacterStatistics table
 CREATE TABLE IF NOT EXISTS CharacterStatistics (
     user_id INTEGER PRIMARY KEY, -- the discord id of the user
-    total_characters INTEGER NOT NULL
+    total_characters INTEGER NOT NULL,
     is_active INTEGER NOT NULL DEFAULT 1 -- 1 = TRUE, 0 = FALSE
 );    
     ",

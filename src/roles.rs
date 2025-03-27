@@ -35,14 +35,14 @@ impl UserRoles {
         UserRoles { quizzes, roles }
     }
 
-    /// Updates the user roles based on currently possessed quiz roles and character count
+    /// Updates the user roles based on currently possessed quiz roles and character count, returns their newest role
     pub async fn update_role(
         &self,
         ctx: crate::Context<'_>,
         guild: &Guild,
         user: &Member,
         statistics: &CharacterStatistics,
-    ) -> Result<(), crate::Error> {
+    ) -> Result<Option<Roles>, crate::Error> {
         let characters = statistics.total_characters;
         let current_role = Roles::from_characters_and_quiz_roles(&self.quizzes, characters);
 
@@ -52,13 +52,13 @@ impl UserRoles {
                 let guild_role = guild.role_by_name(&role.to_string()).unwrap();
                 user.remove_role(ctx, guild_role.id).await?;
             }
-            return Ok(());
+            return Ok(None);
         }
 
         // user's role didn't change, do nothing
         let new_role = current_role.unwrap();
         if self.roles.iter().any(|role| role == &new_role) {
-            return Ok(());
+            return Ok(Some(new_role));
         }
 
         // user's role did change, clear the previous ones and give them the correct role
@@ -69,7 +69,7 @@ impl UserRoles {
 
         let guild_role = guild.role_by_name(&new_role.to_string()).unwrap();
         user.add_role(ctx, guild_role.id).await?;
-        Ok(())
+        Ok(Some(new_role))
     }
 }
 
@@ -239,7 +239,7 @@ impl QuizRoles {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Roles {
     Heimin,
     Danshaku,
@@ -253,6 +253,18 @@ pub enum Roles {
     Texnsen,
     Texnnou,
     Jouzu,
+}
+
+impl PartialOrd for Roles {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Roles {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (*self as u8).cmp(&(*other as u8))
+    }
 }
 
 #[derive(Debug, Clone)]

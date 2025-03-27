@@ -19,6 +19,9 @@ pub trait CharacterStatisticsRepository {
         notes: Option<String>,
     ) -> Result<CharacterStatistics, Error>;
 
+    /// Checks if a user has logged before. Doesn't add the user to the db.
+    fn exists(&self, user_id: u64) -> Result<bool, Error>;
+
     /// Returns the total logged characters of a user. If the user doesn't exist in the db, this also inserts the user to the db.
     fn get_statistics(&mut self, user_id: u64) -> Result<CharacterStatistics, Error>;
 
@@ -39,7 +42,7 @@ pub trait CharacterStatisticsRepository {
         page_number: u64,
     ) -> Result<Vec<CharacterStatistics>, Error>;
 
-    fn get_total_users(&mut self) -> Result<u64, Error>;
+    fn get_total_active_users(&mut self) -> Result<u64, Error>;
 
     /// Returns a list of log entries according to the (LOG_ENTRY_PAGE_SIZE constant), sorted by time created
     fn get_paginated_log_entries_by_time(
@@ -219,6 +222,29 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository<'_> {
         Ok(result)
     }
 
+    fn exists(&self, user_id: u64) -> Result<bool, Error> {
+        let characters = self
+            .transaction
+            .query_row(
+                "
+    SELECT total_characters FROM CharacterStatistics
+    WHERE user_id = ?1
+    ",
+                [user_id],
+                |row| {
+                    let c: i32 = row.get(0)?;
+                    Ok(c)
+                },
+            )
+            .optional()?;
+
+        let exists = match characters {
+            Some(_) => true,
+            None => false,
+        };
+        Ok(exists)
+    }
+
     fn get_statistics(&mut self, user_id: u64) -> Result<CharacterStatistics, Error> {
         let characters = self
             .transaction
@@ -259,11 +285,12 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository<'_> {
         Ok(rank)
     }
 
-    fn get_total_users(&mut self) -> Result<u64, Error> {
+    fn get_total_active_users(&mut self) -> Result<u64, Error> {
         let mut stmt = self.transaction.prepare(
             "
             SELECT COUNT(*) 
             FROM CharacterStatistics 
+            WHERE is_active == 1
             ",
         )?;
 
