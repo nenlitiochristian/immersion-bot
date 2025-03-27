@@ -83,7 +83,17 @@ async fn setup_discord_bot(data: Data) {
             })
         },
         // This code is run after a command if it was successful (returned Ok)
-        post_command: |ctx| Box::pin(async move {}),
+        post_command: |ctx| {
+            Box::pin(async move {
+                let guild: PartialGuild = ctx.partial_guild().await.unwrap();
+                let user_data = ctx.data();
+                let result = refresh_active_users(ctx.serenity_context(), user_data, &guild).await;
+                match result {
+                    Ok(_) => (),
+                    Err(error) => println!("Error occured when refreshing active users: {}", error),
+                }
+            })
+        },
         // Every command invocation must pass this check to continue execution
         // command_check: Some(|ctx| Box::pin(async move { Ok(true) })),
 
@@ -128,7 +138,7 @@ async fn event_handler(
             println!("Running ready event");
             for guild in &data_about_bot.guilds {
                 let partial_guild = guild.id.to_partial_guild(ctx).await?;
-                refresh_active_users(ctx, framework.user_data, partial_guild).await?;
+                refresh_active_users(ctx, framework.user_data, &partial_guild).await?;
             }
         }
         serenity::FullEvent::GuildMemberAddition { new_member } => {
@@ -167,7 +177,7 @@ async fn event_handler(
 async fn refresh_active_users(
     ctx: &serenity::Context,
     user_data: &Data,
-    guild: PartialGuild,
+    guild: &PartialGuild,
 ) -> Result<(), Error> {
     println!("Reloading active users...");
     let should_refresh = {
@@ -224,6 +234,7 @@ async fn refresh_active_users(
     metadata_repository.set_last_active_status_refresh()?;
 
     tx.commit()?;
+    println!("Done reloading active users");
     Ok(())
 }
 
