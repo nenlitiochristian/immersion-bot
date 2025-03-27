@@ -56,7 +56,7 @@ pub trait CharacterStatisticsRepository {
 
 pub trait MetadataRepository {
     fn get_last_active_status_refresh(&self) -> Result<Option<DateTime<Utc>>, Error>;
-    fn set_last_active_status_refresh(&mut self) -> Result<(), Error>;
+    fn set_last_active_status_refresh(&mut self, time: DateTime<Utc>) -> Result<(), Error>;
 }
 
 pub struct SQLiteMetadataRepository<'conn> {
@@ -91,16 +91,17 @@ impl MetadataRepository for SQLiteMetadataRepository<'_> {
         Ok(None)
     }
 
-    fn set_last_active_status_refresh(&mut self) -> Result<(), Error> {
-        let now = Utc::now().timestamp();
-
+    fn set_last_active_status_refresh(&mut self, time: DateTime<Utc>) -> Result<(), Error> {
         let sql_update = "UPDATE Metadata SET last_active_status_refresh = ?1";
-        let affected = self.transaction.execute(sql_update, params![now])?;
+        let affected = self
+            .transaction
+            .execute(sql_update, params![time.timestamp()])?;
 
         // If no row was updated, insert a new row
         if affected == 0 {
             let sql_insert = "INSERT INTO Metadata (last_active_status_refresh) VALUES (?1)";
-            self.transaction.execute(sql_insert, params![now])?;
+            self.transaction
+                .execute(sql_insert, params![time.timestamp()])?;
         }
 
         Ok(())

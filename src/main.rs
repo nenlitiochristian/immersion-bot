@@ -10,7 +10,7 @@ mod roles;
 mod utils;
 
 use ::serenity::all::{Member, PartialGuild, UserId};
-use chrono::Utc;
+use chrono::{TimeZone, Utc};
 use constants::USER_ACTIVE_STATUS_REFRESH_INTERVAL;
 use dotenv::dotenv;
 use migrate::{get_json_data, migrate};
@@ -231,7 +231,7 @@ async fn refresh_active_users(
     }
 
     let mut metadata_repository = SQLiteMetadataRepository::new(&tx);
-    metadata_repository.set_last_active_status_refresh()?;
+    metadata_repository.set_last_active_status_refresh(Utc::now())?;
 
     tx.commit()?;
     println!("Done reloading active users");
@@ -301,6 +301,18 @@ async fn main() {
             }
             _ => (),
         };
+
+        // after successful migration, we need to refresh active users
+        let transaction = connection
+            .transaction()
+            .expect("Unable to refresh active users after migration");
+        let mut repo = SQLiteMetadataRepository::new(&transaction);
+        let time = Utc
+            .timestamp_opt(0, 0)
+            .single()
+            .expect("Date conversion error in migration");
+        repo.set_last_active_status_refresh(time).unwrap();
+        transaction.commit().unwrap();
     }
 
     let data = Data {
