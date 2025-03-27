@@ -10,11 +10,16 @@ mod roles;
 mod utils;
 
 use ::serenity::all::{Member, PartialGuild, UserId};
+use chrono::Utc;
+use constants::USER_ACTIVE_STATUS_REFRESH_INTERVAL;
 use dotenv::dotenv;
 use migrate::{get_json_data, migrate};
 use model::Data;
 use poise::serenity_prelude as serenity;
-use repository::{CharacterStatisticsRepository, SQLiteCharacterStatisticsRepository};
+use repository::{
+    CharacterStatisticsRepository, MetadataRepository, SQLiteCharacterStatisticsRepository,
+    SQLiteMetadataRepository,
+};
 use reqwest::Client;
 use roles::QuizRoles;
 use rusqlite::Connection;
@@ -123,7 +128,7 @@ async fn event_handler(
             println!("Running ready event");
             for guild in &data_about_bot.guilds {
                 let partial_guild = guild.id.to_partial_guild(ctx).await?;
-                reload_active_users(ctx, framework.user_data, partial_guild).await?;
+                refresh_active_users(ctx, framework.user_data, partial_guild).await?;
             }
         }
         serenity::FullEvent::GuildMemberAddition { new_member } => {
@@ -159,12 +164,32 @@ async fn event_handler(
     Ok(())
 }
 
-async fn reload_active_users(
+async fn refresh_active_users(
     ctx: &serenity::Context,
     user_data: &Data,
     guild: PartialGuild,
 ) -> Result<(), Error> {
     println!("Reloading active users...");
+    let should_refresh = {
+        let mut conn = user_data.connection.lock().unwrap();
+        let tx = conn.transaction()?;
+        let repository = SQLiteMetadataRepository::new(&tx);
+        let last_refresh = repository.get_last_active_status_refresh()?;
+        tx.commit()?;
+        match last_refresh {
+            None => true,
+            Some(last_refresh) => {
+                let elapsed = Utc::now().timestamp() - last_refresh.timestamp();
+                elapsed > USER_ACTIVE_STATUS_REFRESH_INTERVAL
+            }
+        }
+    };
+
+    if !should_refresh {
+        println!("No need to reload, 2 hours haven't passed");
+        return Ok(());
+    }
+
     let mut after: Option<UserId> = None;
     let mut members: HashMap<UserId, Member> = HashMap::with_capacity(2500);
     loop {
@@ -194,6 +219,9 @@ async fn reload_active_users(
         }
         page_number += 1;
     }
+
+    let mut metadata_repository = SQLiteMetadataRepository::new(&tx);
+    metadata_repository.set_last_active_status_refresh()?;
 
     tx.commit()?;
     Ok(())
@@ -227,6 +255,16 @@ CREATE TABLE IF NOT EXISTS CharacterLogEntry (
     FOREIGN KEY (user_id) REFERENCES CharacterStatistics (user_id)
 );
     ",
+        (),
+    )?;
+
+    // Setup migration
+    connection.execute(
+        "
+CREATE TABLE IF NOT EXISTS Metadata (
+    last_active_status_refresh INTEGER NOT NULL
+);    
+        ",
         (),
     )?;
 

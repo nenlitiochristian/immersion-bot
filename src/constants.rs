@@ -1,8 +1,13 @@
 use std::sync::LazyLock;
 
+use chrono::Duration;
+
 use crate::roles::{QuizRequirement, QuizRoles};
 
 pub const KOTOBA_BOT_ID: u64 = 251239170058616833;
+
+/// in seconds -> 2 hours
+pub const USER_ACTIVE_STATUS_REFRESH_INTERVAL: i64 = Duration::hours(2).num_seconds();
 
 pub const QUIZ_TIME_LIMIT: i32 = 20000;
 pub const QUIZ_FONT: &str = "Eishiikaisho";

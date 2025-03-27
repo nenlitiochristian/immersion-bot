@@ -4,7 +4,7 @@ use crate::{
     constants::{LEADERBOARD_PAGE_SIZE, LOG_ENTRY_PAGE_SIZE},
     Error,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use rusqlite::{params, OptionalExtension, Transaction};
 use serenity::all::Timestamp;
 
@@ -52,6 +52,59 @@ pub trait CharacterStatisticsRepository {
     ) -> Result<Vec<CharacterLogEntry>, Error>;
 
     fn get_total_log_entries(&mut self, user_id: u64) -> Result<u64, Error>;
+}
+
+pub trait MetadataRepository {
+    fn get_last_active_status_refresh(&self) -> Result<Option<DateTime<Utc>>, Error>;
+    fn set_last_active_status_refresh(&mut self) -> Result<(), Error>;
+}
+
+pub struct SQLiteMetadataRepository<'conn> {
+    transaction: &'conn Transaction<'conn>,
+}
+
+impl<'conn> SQLiteMetadataRepository<'conn> {
+    pub fn new(transaction: &'conn Transaction<'conn>) -> Self {
+        SQLiteMetadataRepository { transaction }
+    }
+}
+
+impl MetadataRepository for SQLiteMetadataRepository<'_> {
+    fn get_last_active_status_refresh(&self) -> Result<Option<DateTime<Utc>>, Error> {
+        let mut stmt = self.transaction.prepare(
+            "
+            SELECT last_active_status_refresh
+            FROM Metadata
+            ",
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            // Since we're selecting one column, use index 0
+            let time: i64 = row.get(0)?;
+            Ok(Utc.timestamp_opt(time, 0).unwrap())
+        })?;
+
+        for row in rows {
+            return Ok(Some(row?));
+        }
+
+        Ok(None)
+    }
+
+    fn set_last_active_status_refresh(&mut self) -> Result<(), Error> {
+        let now = Utc::now().timestamp();
+
+        let sql_update = "UPDATE Metadata SET last_active_status_refresh = ?1";
+        let affected = self.transaction.execute(sql_update, params![now])?;
+
+        // If no row was updated, insert a new row
+        if affected == 0 {
+            let sql_insert = "INSERT INTO Metadata (last_active_status_refresh) VALUES (?1)";
+            self.transaction.execute(sql_insert, params![now])?;
+        }
+
+        Ok(())
+    }
 }
 
 pub struct SQLiteCharacterStatisticsRepository<'conn> {
