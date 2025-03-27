@@ -239,7 +239,7 @@ async fn refresh_active_users(
 }
 
 fn setup_sqlite_connection() -> rusqlite::Result<Connection> {
-    let connection = Connection::open("perdition.db")?;
+    let connection = Connection::open("./perdition.db")?;
 
     // Setup migration
     connection.execute(
