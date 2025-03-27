@@ -16,14 +16,16 @@ pub struct Data {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CharacterStatistics {
     user_id: u64,
+    pub name: String,
     pub total_characters: i32,
 }
 
 impl CharacterStatistics {
-    pub fn new(user_id: u64, total_characters: i32) -> CharacterStatistics {
+    pub fn new(user_id: u64, total_characters: i32, name: String) -> CharacterStatistics {
         CharacterStatistics {
             total_characters,
             user_id,
+            name,
         }
     }
 

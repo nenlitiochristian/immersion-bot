@@ -30,6 +30,7 @@ pub fn migrate(
     for data in old_data.iter() {
         repo.add_log_entry(
             data.user_id,
+            "Unknown",
             data.characters,
             &Utc::now(),
             Some("Migrate from previous bot".to_owned()),

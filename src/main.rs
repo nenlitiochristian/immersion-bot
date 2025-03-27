@@ -146,7 +146,11 @@ async fn event_handler(
             let tx = conn.transaction()?;
             let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
             if repository.exists(new_member.user.id.get())? {
-                repository.set_active_status(new_member.user.id.get(), true)?;
+                repository.set_active_status(
+                    new_member.user.id.get(),
+                    true,
+                    Some(new_member.user.display_name()),
+                )?;
                 println!("{} returned", new_member.display_name());
             }
             tx.commit()?;
@@ -159,7 +163,7 @@ async fn event_handler(
             let mut conn = framework.user_data.connection.lock().unwrap();
             let tx = conn.transaction()?;
             let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
-            repository.set_active_status(user.id.get(), false)?;
+            repository.set_active_status(user.id.get(), false, Some(user.display_name()))?;
             println!("{} left", user.display_name());
             tx.commit()?;
         }
@@ -224,8 +228,8 @@ async fn refresh_active_users(
             break;
         }
         for u in users.iter() {
-            let is_active = members.contains_key(&UserId::from(u.get_user_id()));
-            repository.set_active_status(u.get_user_id(), is_active)?;
+            let member = members.get(&UserId::from(u.get_user_id()));
+            repository.set_active_status(u.get_user_id(), member.is_some(), None)?;
         }
         page_number += 1;
     }
@@ -248,7 +252,8 @@ fn setup_sqlite_connection() -> rusqlite::Result<Connection> {
 CREATE TABLE IF NOT EXISTS CharacterStatistics (
     user_id INTEGER PRIMARY KEY, -- the discord id of the user
     total_characters INTEGER NOT NULL,
-    is_active INTEGER NOT NULL DEFAULT 1 -- 1 = TRUE, 0 = FALSE
+    is_active INTEGER NOT NULL DEFAULT 1, -- 1 = TRUE, 0 = FALSE
+    name TEXT NOT NULL DEFAULT 'UNKNOWN'
 );    
     ",
         (),

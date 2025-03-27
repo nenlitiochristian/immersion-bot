@@ -46,9 +46,10 @@ pub async fn log_characters(
         let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
 
         let user_id = ctx.author().id;
+        let name = ctx.author().display_name();
 
         let time = &ctx.created_at();
-        let data = repository.add_log_entry(user_id.get(), characters, time, notes)?;
+        let data = repository.add_log_entry(user_id.get(), name, characters, time, notes)?;
         let rank = repository.get_rank(&data)?;
         tx.commit()?;
 
@@ -124,13 +125,14 @@ pub async fn edit_characters(
     #[description = "The amount of characters read"] characters: i32,
     #[description = "Extra information such as the title of the book or VN"] notes: Option<String>,
 ) -> Result<(), Error> {
+    let name = user_id.to_user(ctx).await?.display_name().to_owned();
     let (data, rank) = {
         let mut connection = ctx.data().connection.lock().unwrap();
         let tx = connection.transaction().map_err(|e| e.to_string())?;
         let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
 
         let time = &ctx.created_at();
-        let data = repository.add_log_entry(user_id.get(), characters, time, notes)?;
+        let data = repository.add_log_entry(user_id.get(), &name, characters, time, notes)?;
         let rank = repository.get_rank(&data)?;
         tx.commit()?;
 
@@ -318,7 +320,8 @@ async fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<C
         let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
 
         let users = repository.get_paginated_active_users_by_characters(page)?;
-        let stats = repository.get_statistics(ctx.author().id.get())?;
+        let stats = repository
+            .get_or_initialize_statistics(ctx.author().id.get(), ctx.author().display_name())?;
         let rank = repository.get_rank(&stats)?;
 
         let users_count = repository.get_total_active_users()?;
@@ -345,9 +348,9 @@ async fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<C
     for (index, u) in users.iter().enumerate() {
         let index: u64 = index.try_into().unwrap();
         line += &format!(
-            "{}. <@{}>: {} characters.\n",
+            "{}. {}: {} characters.\n",
             index + (page * LEADERBOARD_PAGE_SIZE) + 1,
-            u.get_user_id(),
+            u.name,
             format_with_commas(u.total_characters)
         );
     }
