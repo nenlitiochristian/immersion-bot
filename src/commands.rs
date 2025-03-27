@@ -1,8 +1,7 @@
-use std::{fmt::format, future::Future, time::Instant};
+use std::{future::Future, time::Instant};
 
-use futures::future::join_all;
 use poise::CreateReply;
-use serenity::all::{Color, CreateEmbed, CreateEmbedFooter, Member, UserId};
+use serenity::all::{Color, CreateEmbed, CreateEmbedFooter, UserId};
 
 use crate::{
     constants::{LEADERBOARD_PAGE_SIZE, LOG_ENTRY_PAGE_SIZE},
@@ -76,7 +75,7 @@ pub async fn log_characters(
         let message = if condition {
             format!(
                 "{} more characters",
-                format_with_commas(data.total_characters)
+                format_with_commas(requirement.characters - data.total_characters)
             )
         } else {
             format!("to pass {}", requirement.quiz_role.unwrap().to_string())
@@ -147,7 +146,7 @@ pub async fn edit_characters(
         let message = if condition {
             format!(
                 "{} more characters",
-                format_with_commas(data.total_characters)
+                format_with_commas(requirement.characters - data.total_characters)
             )
         } else {
             format!("to pass {}", requirement.quiz_role.unwrap().to_string())
@@ -296,7 +295,7 @@ async fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<C
         let tx = connection.transaction().map_err(|e| e.to_string())?;
         let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
 
-        let users = repository.get_paginated_users_by_characters(page)?;
+        let users = repository.get_paginated_active_users_by_characters(page)?;
         let stats = repository.get_statistics(ctx.author().id.get())?;
         let rank = repository.get_rank(&stats)?;
 
@@ -305,7 +304,6 @@ async fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<C
         (users, rank, users_count, stats)
     };
 
-    let guild = ctx.guild().unwrap().to_owned();
     // there are 15 data per page
     let total_pages = users_count.div_ceil(15);
     let embed_builder = create_base_embed()
@@ -321,31 +319,13 @@ async fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<C
             format_with_commas(stats.total_characters)
         ));
 
-    let mut member_fetches = Vec::new();
-    for u in &users {
-        member_fetches.push(async {
-            let member = guild.member(ctx, u.get_user_id()).await;
-            (member, u.total_characters)
-        });
-    }
-
-    let member_tuples: Vec<(Member, i32)> = join_all(member_fetches)
-        .await
-        .into_iter()
-        .filter_map(|(member_result, total_characters)| {
-            member_result
-                .ok()
-                .map(|member| (member.into_owned(), total_characters))
-        })
-        .collect();
-
     let mut line = "".to_owned();
-    for (index, tuple) in member_tuples.iter().enumerate() {
+    for (index, u) in users.iter().enumerate() {
         line += &format!(
-            "{}. {}: {} characters.\n",
+            "{}. <@{}>: {} characters.\n",
             index + 1,
-            tuple.0.user.display_name(),
-            format_with_commas(tuple.1)
+            u.get_user_id(),
+            format_with_commas(u.total_characters)
         );
     }
 

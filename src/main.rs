@@ -9,14 +9,17 @@ mod repository;
 mod roles;
 mod utils;
 
+use ::serenity::all::{Member, UserId};
 use dotenv::dotenv;
 use migrate::{get_json_data, migrate};
 use model::Data;
 use poise::serenity_prelude as serenity;
+use repository::{CharacterStatisticsRepository, SQLiteCharacterStatisticsRepository};
 use reqwest::Client;
 use roles::QuizRoles;
 use rusqlite::Connection;
 use std::{
+    collections::HashMap,
     env::{self, var},
     sync::{Arc, Mutex},
     time::Duration,
@@ -93,9 +96,7 @@ async fn setup_discord_bot(data: Data) {
         // Enforce command checks even for owners (enforced by default)
         // Set to true to bypass checks, which is useful for testing
         skip_checks_for_owners: false,
-        event_handler: |ctx, event, framework, data| {
-            Box::pin(event_handler(ctx, event, framework, data))
-        },
+        event_handler: |ctx, event, framework, _| Box::pin(event_handler(ctx, event, framework)),
         ..Default::default()
     };
 
@@ -125,12 +126,61 @@ async fn setup_discord_bot(data: Data) {
 async fn event_handler(
     ctx: &serenity::Context,
     event: &serenity::FullEvent,
-    _framework: poise::FrameworkContext<'_, Data, Error>,
-    data: &Data,
+    framework: poise::FrameworkContext<'_, Data, Error>,
 ) -> Result<(), Error> {
     match event {
+        serenity::FullEvent::Ready { data_about_bot } => {
+            for guild in &data_about_bot.guilds {
+                if guild.unavailable {
+                    continue;
+                }
+                let partial_guild = guild.id.to_partial_guild(ctx).await?;
+                let mut after: Option<UserId> = None;
+                let mut members: HashMap<UserId, Member> = HashMap::with_capacity(2500);
+                loop {
+                    let temp_members = partial_guild.members(ctx, None, after).await?;
+                    if temp_members.is_empty() {
+                        break;
+                    }
+                    after = Some(temp_members.last().unwrap().user.id);
+                    for m in temp_members.into_iter() {
+                        members.insert(m.user.id, m);
+                    }
+                }
+
+                let mut conn = framework.user_data.connection.lock().unwrap();
+                let tx = conn.transaction()?;
+                let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
+
+                let mut page_number = 0;
+                loop {
+                    let users = repository.get_paginated_users_by_id(page_number)?;
+                    if users.is_empty() {
+                        break;
+                    }
+                    for u in users.iter() {
+                        let is_active = members.contains_key(&UserId::from(u.get_user_id()));
+                        repository.set_active_status(u.get_user_id(), is_active)?;
+                    }
+                    page_number += 1;
+                }
+
+                tx.commit()?;
+            }
+        }
+        serenity::FullEvent::GuildMemberRemoval {
+            guild_id: _,
+            user,
+            member_data_if_available: _,
+        } => {
+            let mut conn = framework.user_data.connection.lock().unwrap();
+            let tx = conn.transaction()?;
+            let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
+            repository.set_active_status(user.id.get(), false)?;
+            tx.commit()?;
+        }
         serenity::FullEvent::Message { new_message } => {
-            let result = QuizRoles::handle_quiz_roles(ctx, new_message, data).await;
+            let result = QuizRoles::handle_quiz_roles(ctx, new_message, framework.user_data).await;
             if result.is_err() {
                 println!("Handle quiz role error: {}", result.unwrap_err());
             }
@@ -150,6 +200,7 @@ fn setup_sqlite_connection() -> rusqlite::Result<Connection> {
 CREATE TABLE IF NOT EXISTS CharacterStatistics (
     user_id INTEGER PRIMARY KEY, -- the discord id of the user
     total_characters INTEGER NOT NULL
+    is_active INTEGER NOT NULL DEFAULT 1 -- 1 = TRUE, 0 = FALSE
 );    
     ",
         (),

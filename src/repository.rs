@@ -5,7 +5,7 @@ use crate::{
     Error,
 };
 use chrono::{DateTime, Utc};
-use rusqlite::{OptionalExtension, Transaction};
+use rusqlite::{params, OptionalExtension, Transaction};
 use serenity::all::Timestamp;
 
 use crate::model::{CharacterLogEntry, CharacterStatistics};
@@ -24,8 +24,17 @@ pub trait CharacterStatisticsRepository {
 
     fn get_rank(&mut self, statistics: &CharacterStatistics) -> Result<i32, Error>;
 
-    /// Returns a list of users according to the (LEADERBOARD_PAGE_SIZE constant), sorted by the amount of characters logged descendingly.
-    fn get_paginated_users_by_characters(
+    /// Inactive means that the user has left the server and won't be shown in the leaderboards
+    fn set_active_status(&mut self, user_id: u64, active: bool) -> Result<(), Error>;
+
+    /// Returns a list of active users according to the (LEADERBOARD_PAGE_SIZE constant), sorted by the amount of characters logged descendingly.
+    fn get_paginated_active_users_by_characters(
+        &mut self,
+        page_number: u64,
+    ) -> Result<Vec<CharacterStatistics>, Error>;
+
+    /// Returns a list of users according to the (LEADERBOARD_PAGE_SIZE constant), sorted by the user id.
+    fn get_paginated_users_by_id(
         &mut self,
         page_number: u64,
     ) -> Result<Vec<CharacterStatistics>, Error>;
@@ -104,7 +113,14 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository<'_> {
         Ok(new_statistics)
     }
 
-    fn get_paginated_users_by_characters(
+    fn set_active_status(&mut self, user_id: u64, active: bool) -> Result<(), Error> {
+        let sql = "UPDATE CharacterStatistics SET is_active = ?1 WHERE user_id = ?2";
+
+        self.transaction.execute(sql, params![active, user_id])?;
+        Ok(())
+    }
+
+    fn get_paginated_active_users_by_characters(
         &mut self,
         page_number: u64,
     ) -> Result<Vec<CharacterStatistics>, Error> {
@@ -114,7 +130,38 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository<'_> {
             "
                 SELECT user_id, total_characters
                 FROM CharacterStatistics
+                WHERE is_active == 1
                 ORDER BY total_characters DESC
+                LIMIT ?1 OFFSET ?2;
+                ",
+        )?;
+
+        let rows = stmt.query_map([LEADERBOARD_PAGE_SIZE, offset], |row| {
+            let user_id: u64 = row.get(0)?;
+            let total_characters: i32 = row.get(1)?;
+            Ok(CharacterStatistics::new(user_id, total_characters))
+        })?;
+
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row?);
+        }
+
+        Ok(result)
+    }
+
+    /// Returns a list of users according to the (LEADERBOARD_PAGE_SIZE constant), sorted by the user id.
+    fn get_paginated_users_by_id(
+        &mut self,
+        page_number: u64,
+    ) -> Result<Vec<CharacterStatistics>, Error> {
+        let offset = page_number * LEADERBOARD_PAGE_SIZE;
+
+        let mut stmt = self.transaction.prepare(
+            "
+                SELECT user_id, total_characters
+                FROM CharacterStatistics
+                ORDER BY user_id ASC
                 LIMIT ?1 OFFSET ?2;
                 ",
         )?;
@@ -201,7 +248,7 @@ impl CharacterStatisticsRepository for SQLiteCharacterStatisticsRepository<'_> {
             "
             SELECT COUNT(*) 
             FROM CharacterStatistics 
-            WHERE total_characters > ?1
+            WHERE total_characters > ?1 AND is_active == 1
             ",
         )?;
 

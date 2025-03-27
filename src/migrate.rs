@@ -35,5 +35,6 @@ pub fn migrate(
             Some("Migrate from previous bot".to_owned()),
         )?;
     }
+    tx.commit()?;
     Ok(())
 }

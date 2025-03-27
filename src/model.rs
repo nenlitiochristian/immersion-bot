@@ -7,6 +7,7 @@ use serenity::all::Timestamp;
 
 // Custom user data passed to all command functions
 pub struct Data {
+    /// connection to sqlite for db
     pub connection: Mutex<Connection>,
     /// needed to make calls to the kotoba API for quizzes
     pub http_client: Client,
