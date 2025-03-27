@@ -64,7 +64,7 @@ pub async fn log_characters(
     let new_role = roles.update_role(ctx, &guild, &user, &data).await?;
     if let Some(new_role) = new_role {
         // role changed, if it's higher give a congratulations message
-        if !roles.roles.iter().all(|r| &new_role > r) {
+        if roles.roles.iter().all(|r| &new_role > r) {
             ctx.say(format!(
                 "Congratulations {} for obtaining role: {}",
                 user.user.display_name(),
