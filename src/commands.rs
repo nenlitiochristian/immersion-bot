@@ -343,9 +343,10 @@ async fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<C
 
     let mut line = "".to_owned();
     for (index, u) in users.iter().enumerate() {
+        let index: u64 = index.try_into().unwrap();
         line += &format!(
             "{}. <@{}>: {} characters.\n",
-            index + 1,
+            index + (page * LEADERBOARD_PAGE_SIZE) + 1,
             u.get_user_id(),
             format_with_commas(u.total_characters)
         );
