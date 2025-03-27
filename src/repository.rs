@@ -139,7 +139,7 @@ impl<'conn> SQLiteCharacterStatisticsRepository<'conn> {
         INSERT INTO CharacterStatistics (user_id, total_characters, name)
         VALUES (?1, ?2, ?3)
         ",
-            (user_id, 0, name.clone()),
+            (user_id, 0, name),
         )?;
         Ok(CharacterStatistics::new(user_id, 0, name.to_owned()))
     }
@@ -355,10 +355,7 @@ WHERE user_id = ?3;
 
         let characters = match characters {
             Some(c) => c,
-            None => {
-                self.initialize_statistics(user_id, name.clone())?
-                    .total_characters
-            }
+            None => self.initialize_statistics(user_id, name)?.total_characters,
         };
 
         Ok(CharacterStatistics::new(
