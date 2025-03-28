@@ -333,7 +333,7 @@ async fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<C
     let total_pages = users_count.div_ceil(15);
     let embed_builder = create_base_embed()
         .title(format!(
-            "Leaderboard (Page {} of {}).",
+            "Leaderboard (Page {} of {})",
             page + 1,
             total_pages
         ))
@@ -348,7 +348,7 @@ async fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<C
     for (index, u) in users.iter().enumerate() {
         let index: u64 = index.try_into().unwrap();
         line += &format!(
-            "{}. {}: {} characters.\n",
+            "{}. {}: {} characters\n",
             index + (page * LEADERBOARD_PAGE_SIZE) + 1,
             u.name,
             format_with_commas(u.total_characters)
@@ -356,7 +356,7 @@ async fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<C
     }
 
     if line.is_empty() {
-        line = format!("No users found for page {}.", page + 1)
+        line = format!("No users found for page {}", page + 1)
     }
 
     let duration = start.elapsed();
