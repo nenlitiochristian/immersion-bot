@@ -5,7 +5,7 @@ use serenity::all::{Color, CreateEmbed, CreateEmbedFooter, UserId};
 
 use crate::{
     constants::{LEADERBOARD_PAGE_SIZE, LOG_ENTRY_PAGE_SIZE},
-    repository::{self, CharacterStatisticsRepository, SQLiteCharacterStatisticsRepository},
+    repository::{CharacterStatisticsRepository, SQLiteCharacterStatisticsRepository},
     roles::{Roles, UserRoles},
     utils::format_with_commas,
     Context, Error,
