@@ -221,7 +221,7 @@ WHERE user_id = ?3;
             "
                 SELECT user_id, total_characters, name
                 FROM CharacterStatistics
-                WHERE is_active == 1 AND total_characters > 0
+                WHERE is_active == 1
                 ORDER BY total_characters DESC
                 LIMIT ?1 OFFSET ?2;
                 ",

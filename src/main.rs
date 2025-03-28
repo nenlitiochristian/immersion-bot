@@ -62,6 +62,7 @@ async fn setup_discord_bot(data: Data) {
             commands::usage(),
             commands::how_to_track(),
             commands::roles(),
+            commands::rank(),
             commands::leaderboard(),
             commands::quizzes(),
             commands::edit_characters(),

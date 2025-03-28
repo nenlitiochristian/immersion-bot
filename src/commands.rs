@@ -5,7 +5,7 @@ use serenity::all::{Color, CreateEmbed, CreateEmbedFooter, UserId};
 
 use crate::{
     constants::{LEADERBOARD_PAGE_SIZE, LOG_ENTRY_PAGE_SIZE},
-    repository::{CharacterStatisticsRepository, SQLiteCharacterStatisticsRepository},
+    repository::{self, CharacterStatisticsRepository, SQLiteCharacterStatisticsRepository},
     roles::{Roles, UserRoles},
     utils::format_with_commas,
     Context, Error,
@@ -254,15 +254,18 @@ You can track characters read from manga by using [mokuro reader](https://reader
     Ok(())
 }
 
-async fn make_history_embed_by_page(ctx: Context<'_>, page: u64) -> Result<CreateEmbed, Error> {
+async fn make_history_embed_by_page(
+    ctx: Context<'_>,
+    page: u64,
+    user_id: u64,
+) -> Result<CreateEmbed, Error> {
     let (log_entries, total_count) = {
         let mut connection = ctx.data().connection.lock().unwrap();
         let tx = connection.transaction().map_err(|e| e.to_string())?;
         let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
 
-        let user_id = ctx.author().id;
-        let entries = repository.get_paginated_log_entries_by_time(user_id.get(), page)?;
-        let total_entry_count = repository.get_total_log_entries(user_id.get())?;
+        let entries = repository.get_paginated_log_entries_by_time(user_id, page)?;
+        let total_entry_count = repository.get_total_log_entries(user_id)?;
         tx.commit()?;
 
         (entries, total_entry_count)
@@ -292,27 +295,50 @@ async fn make_history_embed_by_page(ctx: Context<'_>, page: u64) -> Result<Creat
     Ok(embed_builder.description(lines))
 }
 
-/// Shows your latest log history.
+/// Shows yours or other people's latest log history.
 #[poise::command(slash_command)]
-pub async fn history(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn history(
+    ctx: Context<'_>,
+    #[description = "The user you want to check"] user: Option<UserId>,
+) -> Result<(), Error> {
+    let user_id = user.unwrap_or(ctx.author().id).get();
+    let exists = {
+        let mut connection = ctx.data().connection.lock().unwrap();
+        let tx = connection.transaction()?;
+        let repository = SQLiteCharacterStatisticsRepository::new(&tx);
+        repository.exists(user_id)?
+    };
+
+    if !exists {
+        let embed = create_base_embed().description("The user hasn't made any logs.");
+        ctx.send(CreateReply::default().embed(embed).ephemeral(true))
+            .await?;
+        return Ok(());
+    }
+
     let length = {
         let mut connection = ctx.data().connection.lock().unwrap();
         let tx = connection.transaction().map_err(|e| e.to_string())?;
         let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
 
-        let user_id = ctx.author().id;
-        let entries = repository.get_total_log_entries(user_id.get())?;
+        let entries = repository.get_total_log_entries(user_id)?;
         tx.commit()?;
 
         entries.div_ceil(LOG_ENTRY_PAGE_SIZE)
     };
 
-    paginate(ctx, make_history_embed_by_page, length).await?;
+    paginate(ctx, None, user_id, make_history_embed_by_page, length).await?;
 
     Ok(())
 }
 
-async fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<CreateEmbed, Error> {
+async fn make_leaderboard_embed_by_page(
+    ctx: Context<'_>,
+    page: u64,
+    custom_context_data: (u64, String),
+) -> Result<CreateEmbed, Error> {
+    let user_id = custom_context_data.0;
+    let user_name = custom_context_data.1.as_str();
     let start = Instant::now();
     let (users, rank, users_count, stats) = {
         let mut connection = ctx.data().connection.lock().unwrap();
@@ -320,8 +346,7 @@ async fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<C
         let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
 
         let users = repository.get_paginated_active_users_by_characters(page)?;
-        let stats = repository
-            .get_or_initialize_statistics(ctx.author().id.get(), ctx.author().display_name())?;
+        let stats = repository.get_or_initialize_statistics(user_id, user_name)?;
         let rank = repository.get_rank(&stats)?;
 
         let users_count = repository.get_total_active_users()?;
@@ -330,7 +355,7 @@ async fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<C
     };
 
     // there are 15 data per page
-    let total_pages = users_count.div_ceil(15);
+    let total_pages = users_count.div_ceil(LEADERBOARD_PAGE_SIZE);
     let embed_builder = create_base_embed()
         .title(format!(
             "Leaderboard (Page {} of {})",
@@ -347,7 +372,7 @@ async fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<C
     let mut line = "".to_owned();
     for (index, u) in users.iter().enumerate() {
         let index: u64 = index.try_into().unwrap();
-        let is_bold = ctx.author().id.get() == u.get_user_id();
+        let is_bold = user_id == u.get_user_id();
         let formatted = if is_bold {
             format!(
                 "{}. **{}: {} characters**\n",
@@ -377,6 +402,64 @@ async fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<C
     Ok(embed_builder.field("Top Immersers", line, false))
 }
 
+/// Shows you where you are on the leaderboard. Can also be used to check other people's rank.
+#[poise::command(slash_command)]
+pub async fn rank(
+    ctx: Context<'_>,
+    #[description = "The user you want to check"] user: Option<UserId>,
+) -> Result<(), Error> {
+    let (user_id, display_name) = match user {
+        None => (
+            ctx.author().id.get(),
+            ctx.author().display_name().to_owned(),
+        ),
+        Some(id) => {
+            let user = id.to_user(ctx).await?;
+            (id.get(), user.display_name().to_owned())
+        }
+    };
+
+    let exists = {
+        let mut connection = ctx.data().connection.lock().unwrap();
+        let tx = connection.transaction()?;
+        let repository = SQLiteCharacterStatisticsRepository::new(&tx);
+        repository.exists(user_id)?
+    };
+
+    if !exists {
+        let embed = create_base_embed().description("The user hasn't made any logs.");
+        ctx.send(CreateReply::default().embed(embed).ephemeral(true))
+            .await?;
+        return Ok(());
+    }
+
+    let (total_pages, my_page) = {
+        let mut connection = ctx.data().connection.lock().unwrap();
+        let tx = connection.transaction().map_err(|e| e.to_string())?;
+        let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
+
+        let users_count = repository.get_total_active_users()?;
+        let stats = repository.get_or_initialize_statistics(user_id, &display_name)?;
+        let rank: u64 = repository.get_rank(&stats)?.try_into()?;
+        tx.commit()?;
+
+        let pages = users_count.div_ceil(LEADERBOARD_PAGE_SIZE);
+        let my_page = rank.div_ceil(LEADERBOARD_PAGE_SIZE);
+        (pages, my_page)
+    };
+
+    paginate(
+        ctx,
+        Some(my_page),
+        (user_id, display_name),
+        make_leaderboard_embed_by_page,
+        total_pages,
+    )
+    .await?;
+
+    Ok(())
+}
+
 /// Shows the leaderboard.
 #[poise::command(slash_command)]
 pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
@@ -391,7 +474,17 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
         users_count.div_ceil(LEADERBOARD_PAGE_SIZE)
     };
 
-    paginate(ctx, make_leaderboard_embed_by_page, total_pages).await?;
+    paginate(
+        ctx,
+        None,
+        (
+            ctx.author().id.get(),
+            ctx.author().display_name().to_owned(),
+        ),
+        make_leaderboard_embed_by_page,
+        total_pages,
+    )
+    .await?;
 
     Ok(())
 }
@@ -436,15 +529,19 @@ Quiz 5 (上手): `k!quiz stations_full 100 nd mmq=4 font=5 atl=20`");
     Ok(())
 }
 
-pub async fn paginate<'a, F, Fut>(
+pub async fn paginate<'a, F, Fut, CustomContextData>(
     ctx: Context<'a>,
+    page_start: Option<u64>,
+    custom_context_data: CustomContextData,
     page_fetch_function: F,
     length: u64,
 ) -> Result<(), Error>
 where
-    F: Fn(Context<'a>, u64) -> Fut,
+    F: Fn(Context<'a>, u64, CustomContextData) -> Fut,
     Fut: Future<Output = Result<CreateEmbed, Error>>,
+    CustomContextData: Clone,
 {
+    let page_start = page_start.unwrap_or(0u64);
     // Define some unique identifiers for the navigation buttons
     let ctx_id = ctx.id();
     let prev_button_id = format!("{}prev", ctx_id);
@@ -453,19 +550,19 @@ where
     // Send the embed with the first page as content
     let reply = {
         let components = serenity::builder::CreateActionRow::Buttons(vec![
-            serenity::builder::CreateButton::new(&prev_button_id).label("Prev"),
-            serenity::builder::CreateButton::new(&next_button_id).label("Next"),
+            serenity::builder::CreateButton::new(&prev_button_id).label("◀️"),
+            serenity::builder::CreateButton::new(&next_button_id).label("▶️"),
         ]);
 
         CreateReply::default()
-            .embed(page_fetch_function(ctx, 0).await?)
+            .embed(page_fetch_function(ctx, page_start, custom_context_data.clone()).await?)
             .components(vec![components])
     };
 
     ctx.send(reply).await?;
 
     // Loop through incoming interactions with the navigation buttons
-    let mut current_page = 0;
+    let mut current_page = page_start;
     while let Some(press) = serenity::collector::ComponentInteractionCollector::new(ctx)
         // We defined our button IDs to start with `ctx_id`. If they don't, some other command's
         // button was pressed
@@ -492,8 +589,9 @@ where
             .create_response(
                 ctx.serenity_context(),
                 serenity::builder::CreateInteractionResponse::UpdateMessage(
-                    serenity::builder::CreateInteractionResponseMessage::new()
-                        .embed(page_fetch_function(ctx, current_page).await?),
+                    serenity::builder::CreateInteractionResponseMessage::new().embed(
+                        page_fetch_function(ctx, current_page, custom_context_data.clone()).await?,
+                    ),
                 ),
             )
             .await?;
