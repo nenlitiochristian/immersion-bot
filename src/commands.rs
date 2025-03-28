@@ -363,7 +363,8 @@ async fn make_leaderboard_embed_by_page(
             total_pages
         ))
         .description(format!(
-            "You are currently rank {} of {}, with {} total characters.",
+            "{} is currently rank {} of {}, with {} total characters.",
+            user_name,
             rank,
             users_count,
             format_with_commas(stats.total_characters)
