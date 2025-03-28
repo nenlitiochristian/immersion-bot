@@ -444,7 +444,7 @@ pub async fn rank(
         tx.commit()?;
 
         let pages = users_count.div_ceil(LEADERBOARD_PAGE_SIZE);
-        let my_page = rank.div_ceil(LEADERBOARD_PAGE_SIZE);
+        let my_page = rank.div_ceil(LEADERBOARD_PAGE_SIZE) - 1;
         (pages, my_page)
     };
 
