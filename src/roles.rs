@@ -400,7 +400,7 @@ impl Roles {
             "男爵" => Some(Self::Danshaku),
             "子爵" => Some(Self::Shishaku),
             "伯爵" => Some(Self::Hakushaku),
-            "候爵" => Some(Self::SourouKoushaku),
+            "侯爵" => Some(Self::SourouKoushaku),
             "公爵" => Some(Self::OoyakeKoushaku),
             "大公" => Some(Self::Taikou),
             "王様" => Some(Self::Ousama),
