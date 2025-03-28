@@ -347,12 +347,24 @@ async fn make_leaderboard_embed_by_page(ctx: Context<'_>, page: u64) -> Result<C
     let mut line = "".to_owned();
     for (index, u) in users.iter().enumerate() {
         let index: u64 = index.try_into().unwrap();
-        line += &format!(
-            "{}. {}: {} characters\n",
-            index + (page * LEADERBOARD_PAGE_SIZE) + 1,
-            u.name,
-            format_with_commas(u.total_characters)
-        );
+        let is_bold = ctx.author().id.get() == u.get_user_id();
+        let formatted = if is_bold {
+            format!(
+                "{}. **{}: {} characters**\n",
+                index + (page * LEADERBOARD_PAGE_SIZE) + 1,
+                u.name,
+                format_with_commas(u.total_characters)
+            )
+        } else {
+            format!(
+                "{}. {}: {} characters\n",
+                index + (page * LEADERBOARD_PAGE_SIZE) + 1,
+                u.name,
+                format_with_commas(u.total_characters)
+            )
+        };
+
+        line += &formatted;
     }
 
     if line.is_empty() {
