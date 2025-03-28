@@ -344,7 +344,7 @@ impl Roles {
             Self::Danshaku => "男爵",
             Self::Shishaku => "子爵",
             Self::Hakushaku => "伯爵",
-            Self::SourouKoushaku => "候爵",
+            Self::SourouKoushaku => "侯爵",
             Self::OoyakeKoushaku => "公爵",
             Self::Taikou => "大公",
             Self::Ousama => "王様",
