@@ -301,7 +301,7 @@ pub async fn history(
     ctx: Context<'_>,
     #[description = "The user you want to check"] user: Option<UserId>,
 ) -> Result<(), Error> {
-    let user_id = user.unwrap_or(ctx.author().id).get();
+    let user_id = user.unwrap_or_else(|| ctx.author().id).get();
     let exists = {
         let mut connection = ctx.data().connection.lock().unwrap();
         let tx = connection.transaction()?;
@@ -474,6 +474,11 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
 
         users_count.div_ceil(LEADERBOARD_PAGE_SIZE)
     };
+
+    {
+        let guild = ctx.guild().unwrap();
+        println!("All roles: {:#?}", guild.roles);
+    }
 
     paginate(
         ctx,
