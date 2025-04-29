@@ -223,7 +223,7 @@ WHERE user_id = ?3;
                 SELECT user_id, total_characters, name
                 FROM CharacterStatistics
                 WHERE is_active == 1 AND total_characters > 0
-                ORDER BY total_characters DESC
+                ORDER BY total_characters DESC, user_id ASC
                 LIMIT ?1 OFFSET ?2;
                 ",
         )?;
@@ -371,13 +371,20 @@ WHERE user_id = ?3;
     fn get_rank(&mut self, statistics: &CharacterStatistics) -> Result<i32, Error> {
         let mut stmt = self.transaction.prepare(
             "
-            SELECT COUNT(*) 
-            FROM CharacterStatistics 
-            WHERE total_characters > ?1 AND is_active == 1
+            WITH RankedUsers AS (
+                SELECT
+                    user_id,
+                    RANK() OVER (ORDER BY total_characters DESC, user_id ASC) AS rank
+                FROM CharacterStatistics
+                WHERE is_active = 1 AND total_characters > 0
+            )
+            SELECT rank
+            FROM RankedUsers
+            WHERE user_id = ?1;
             ",
         )?;
 
-        let rank_count: i64 = stmt.query_row([statistics.total_characters], |row| row.get(0))?;
+        let rank_count: i64 = stmt.query_row([statistics.get_user_id()], |row| row.get(0))?;
 
         // The rank is one plus the number of users with higher total characters
         let rank = (rank_count + 1) as i32;
