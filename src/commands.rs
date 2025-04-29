@@ -53,7 +53,7 @@ pub async fn log_characters(
         let rank = repository.get_rank(&data)?;
         tx.commit()?;
 
-        (data, rank)    
+        (data, rank)
     };
 
     let user = ctx.author_member().await.unwrap().into_owned();
@@ -362,19 +362,26 @@ async fn make_leaderboard_embed_by_page(
 
     // there are 15 data per page
     let total_pages = users_count.div_ceil(LEADERBOARD_PAGE_SIZE);
+    let is_on_leaderboard = rank >= 0 && (rank as u64) <= users_count;
     let embed_builder = create_base_embed()
         .title(format!(
             "Leaderboard (Page {} of {})",
             page + 1,
             total_pages
         ))
-        .description(format!(
-            "{} is currently rank {} of {}, with {} total characters.",
-            user_name,
-            rank,
-            users_count,
-            format_with_commas(stats.total_characters)
-        ));
+        .description(match is_on_leaderboard {
+            true => format!(
+                "{} is currently rank {} of {}, with {} total characters.",
+                user_name,
+                rank,
+                users_count,
+                format_with_commas(stats.total_characters)
+            ),
+            false => format!(
+                "{} is currently unranked, with no logged characters.",
+                user_name
+            ),
+        });
 
     let mut line = "".to_owned();
     for (index, u) in users.iter().enumerate() {
