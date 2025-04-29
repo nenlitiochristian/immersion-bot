@@ -384,11 +384,8 @@ WHERE user_id = ?3;
             ",
         )?;
 
-        let rank_count: i64 = stmt.query_row([statistics.get_user_id()], |row| row.get(0))?;
-
-        // The rank is one plus the number of users with higher total characters
-        let rank = (rank_count + 1) as i32;
-        Ok(rank)
+        let rank_count: i32 = stmt.query_row([statistics.get_user_id()], |row| row.get(0))?;
+        Ok(rank_count)
     }
 
     fn get_total_active_users(&mut self) -> Result<u64, Error> {
