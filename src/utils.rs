@@ -1,22 +1,34 @@
 pub fn format_with_commas(num: i32) -> String {
-    let s = num.to_string();
-    let len = s.len();
+    // if negative, remove the negative mark and process it as a positive number
+    let (mut str, is_negative) = match num < 0 {
+        true => (num.abs().to_string(), true),
+        false => (num.to_string(), false),
+    };
+    let len = str.len();
+
     if len > 3 {
+        if num < 0 {}
         let mut result = String::new();
         let mut count = 0;
 
-        // Traverse the string from the end and insert commas every 3 digits
-        for c in s.chars().rev() {
+        for c in str.chars().rev() {
             if count == 3 {
                 result.push(',');
-                count = 0;
+                count = 0;  
             }
             result.push(c);
             count += 1;
         }
 
-        result.chars().rev().collect() // Reverse to get the correct order
+        if is_negative {
+            result.push('-');
+        }
+
+        result.chars().rev().collect()
     } else {
-        s
+        if is_negative {
+            str = format!("-{str}");
+        }
+        str
     }
 }

@@ -475,11 +475,6 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
         users_count.div_ceil(LEADERBOARD_PAGE_SIZE)
     };
 
-    {
-        let guild = ctx.guild().unwrap();
-        println!("All roles: {:#?}", guild.roles);
-    }
-
     paginate(
         ctx,
         None,
