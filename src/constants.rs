@@ -9,6 +9,8 @@ pub const KOTOBA_BOT_ID: u64 = 251239170058616833;
 /// in seconds -> 2 hours
 pub const USER_ACTIVE_STATUS_REFRESH_INTERVAL: i64 = Duration::hours(2).num_seconds();
 
+pub const CONGRATULATE_NEW_ROLE_CHANNEL_IDS: [u64; 1] = [735507346624741387];
+
 pub const QUIZ_TIME_LIMIT: i32 = 20000;
 pub const QUIZ_FONT: &str = "Eishiikaisho";
 

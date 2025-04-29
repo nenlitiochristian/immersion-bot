@@ -1,10 +1,10 @@
 use std::{future::Future, time::Instant};
 
 use poise::CreateReply;
-use serenity::all::{Color, CreateEmbed, CreateEmbedFooter, UserId};
+use serenity::all::{Channel, ChannelId, Color, CreateEmbed, CreateEmbedFooter, UserId};
 
 use crate::{
-    constants::{LEADERBOARD_PAGE_SIZE, LOG_ENTRY_PAGE_SIZE},
+    constants::{CONGRATULATE_NEW_ROLE_CHANNEL_IDS, LEADERBOARD_PAGE_SIZE, LOG_ENTRY_PAGE_SIZE},
     repository::{CharacterStatisticsRepository, SQLiteCharacterStatisticsRepository},
     roles::{Roles, UserRoles},
     utils::format_with_commas,
@@ -65,12 +65,15 @@ pub async fn log_characters(
     if let Some(new_role) = new_role {
         // role changed, if it's higher give a congratulations message
         if roles.roles.iter().all(|r| &new_role > r) {
-            ctx.say(format!(
+            let congrats_msg = format!(
                 "Congratulations {} for obtaining role: {}",
                 user.user.display_name(),
                 new_role.to_string()
-            ))
-            .await?;
+            );
+            ctx.say(&congrats_msg).await?;
+            for channel_id in CONGRATULATE_NEW_ROLE_CHANNEL_IDS {
+                ChannelId::new(channel_id).say(ctx, &congrats_msg).await?;
+            }
         }
     }
 
@@ -148,12 +151,15 @@ pub async fn edit_characters(
     if let Some(new_role) = new_role {
         // role changed, if it's higher give a congratulations message
         if roles.roles.iter().all(|r| &new_role > r) {
-            ctx.say(format!(
+            let congrats_msg = format!(
                 "Congratulations {} for obtaining role: {}",
                 member.user.display_name(),
                 new_role.to_string()
-            ))
-            .await?;
+            );
+            ctx.say(&congrats_msg).await?;
+            for channel_id in CONGRATULATE_NEW_ROLE_CHANNEL_IDS {
+                ChannelId::new(channel_id).say(ctx, &congrats_msg).await?;
+            }
         }
     }
 
