@@ -255,7 +255,8 @@ WHERE user_id = ?3;
                 SELECT user_id, total_characters, name
                 FROM CharacterStatistics
                 ORDER BY user_id ASC
-                LIMIT ?1 OFFSET ?2;
+                LIMIT ?1 OFFSET ?2
+                WHERE total_characters > 0;
                 ",
         )?;
 
@@ -389,7 +390,7 @@ WHERE user_id = ?3;
             "
             SELECT COUNT(*) 
             FROM CharacterStatistics 
-            WHERE is_active == 1
+            WHERE is_active == 1 AND total_characters > 0
             ",
         )?;
 

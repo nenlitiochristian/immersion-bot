@@ -1,7 +1,7 @@
 use std::{future::Future, time::Instant};
 
 use poise::CreateReply;
-use serenity::all::{Channel, ChannelId, Color, CreateEmbed, CreateEmbedFooter, UserId};
+use serenity::all::{ChannelId, Color, CreateEmbed, CreateEmbedFooter, UserId};
 
 use crate::{
     constants::{CONGRATULATE_NEW_ROLE_CHANNEL_IDS, LEADERBOARD_PAGE_SIZE, LOG_ENTRY_PAGE_SIZE},
@@ -53,7 +53,7 @@ pub async fn log_characters(
         let rank = repository.get_rank(&data)?;
         tx.commit()?;
 
-        (data, rank)
+        (data, rank)    
     };
 
     let user = ctx.author_member().await.unwrap().into_owned();
