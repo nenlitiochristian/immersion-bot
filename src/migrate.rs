@@ -4,7 +4,9 @@ use chrono::Utc;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
-use crate::repository::{CharacterStatisticsRepository, SQLiteCharacterStatisticsRepository};
+use crate::repository::{
+    sqlite_db::SQLiteCharacterStatisticsRepository, CharacterStatisticsRepository,
+};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct OldCharacterLog {

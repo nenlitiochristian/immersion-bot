@@ -17,8 +17,8 @@ use migrate::{get_json_data, migrate};
 use model::Data;
 use poise::serenity_prelude as serenity;
 use repository::{
-    CharacterStatisticsRepository, MetadataRepository, SQLiteCharacterStatisticsRepository,
-    SQLiteMetadataRepository,
+    sqlite_db::SQLiteCharacterStatisticsRepository, sqlite_db::SQLiteMetadataRepository,
+    CharacterStatisticsRepository, MetadataRepository,
 };
 use reqwest::Client;
 use roles::QuizRoles;
