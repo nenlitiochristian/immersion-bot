@@ -320,7 +320,7 @@ async fn main() {
         let time = Utc
             .timestamp_opt(0, 0)
             .single()
-            .expect("Date conversion error in migration");
+            .expect("Date conversion error in migration!");
         repo.set_last_active_status_refresh(time).unwrap();
         transaction.commit().unwrap();
     }
