@@ -3,7 +3,7 @@ use crate::{
     model::{CharacterLogEntry, CharacterStatistics},
     Error,
 };
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{TimeZone, Utc};
 use serenity::all::Timestamp;
 use sqlx::{Postgres, Transaction};
 
@@ -175,15 +175,7 @@ impl<'tx> CharacterStatisticsRepository<'tx> for PostgresCharacterStatisticsRepo
                 name.to_string(),
             ))
         } else {
-            sqlx::query!(
-                r#"INSERT INTO immersion_bot."CharacterStatistics" (user_id, total_characters, name)
-                 VALUES ($1, 0, $2)"#,
-                user_id as i64,
-                name
-            )
-            .execute(&mut **tx)
-            .await?;
-            Ok(CharacterStatistics::new(user_id, 0, name.to_string()))
+            self.initialize_statistics(tx, user_id, name).await
         }
     }
 

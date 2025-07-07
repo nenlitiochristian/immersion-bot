@@ -1,0 +1,28 @@
+name: Run Bot
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clone repo
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Create .env file
+        run: |
+          echo "DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}" >> .env
+          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> .env
+
+      - name: Run the app
+        run: cargo run
+
+env: 
+  DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}

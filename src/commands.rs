@@ -6,7 +6,7 @@ use serenity::all::{ChannelId, Color, CreateEmbed, CreateEmbedFooter, UserId};
 use crate::{
     constants::{CONGRATULATE_NEW_ROLE_CHANNEL_IDS, LEADERBOARD_PAGE_SIZE, LOG_ENTRY_PAGE_SIZE},
     repository::{
-        self, postgres_db::PostgresCharacterStatisticsRepository, CharacterStatisticsRepository,
+        postgres_db::PostgresCharacterStatisticsRepository, CharacterStatisticsRepository,
     },
     roles::{Roles, UserRoles},
     utils::format_with_commas,
