@@ -10,25 +10,20 @@ mod roles;
 mod utils;
 
 use ::serenity::all::{Member, PartialGuild, UserId};
-use chrono::{TimeZone, Utc};
+use chrono::Utc;
 use constants::USER_ACTIVE_STATUS_REFRESH_INTERVAL;
 use dotenv::dotenv;
-use migrate::{get_json_data, migrate};
 use model::Data;
 use poise::serenity_prelude as serenity;
 use repository::{
-    sqlite_db::SQLiteCharacterStatisticsRepository, sqlite_db::SQLiteMetadataRepository,
+    postgres_db::{PostgresCharacterStatisticsRepository, PostgresMetadataRepository},
     CharacterStatisticsRepository, MetadataRepository,
 };
 use reqwest::Client;
 use roles::QuizRoles;
-use rusqlite::Connection;
-use std::{
-    collections::HashMap,
-    env::{self, var},
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use sqlx::{postgres::PgPoolOptions, Executor, PgPool};
+use std::{collections::HashMap, env::var, sync::Arc, time::Duration};
+use tokio::sync::Mutex;
 
 // Types used by all command functions
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -143,30 +138,39 @@ async fn event_handler(
             }
         }
         serenity::FullEvent::GuildMemberAddition { new_member } => {
-            let mut conn = framework.user_data.connection.lock().unwrap();
-            let tx = conn.transaction()?;
-            let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
-            if repository.exists(new_member.user.id.get())? {
-                repository.set_active_status(
-                    new_member.user.id.get(),
-                    true,
-                    Some(new_member.user.display_name()),
-                )?;
-                println!("{} returned", new_member.display_name());
+            let conn = framework.user_data.connection.lock().await;
+            let mut tx = conn.begin().await?;
+            {
+                let mut repository = PostgresCharacterStatisticsRepository::new();
+                if repository.exists(&mut tx, new_member.user.id.get()).await? {
+                    repository
+                        .set_active_status(
+                            &mut tx,
+                            new_member.user.id.get(),
+                            true,
+                            Some(new_member.user.display_name()),
+                        )
+                        .await?;
+                    println!("{} returned", new_member.display_name());
+                }
             }
-            tx.commit()?;
+            tx.commit().await?;
         }
         serenity::FullEvent::GuildMemberRemoval {
             guild_id: _,
             user,
             member_data_if_available: _,
         } => {
-            let mut conn = framework.user_data.connection.lock().unwrap();
-            let tx = conn.transaction()?;
-            let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
-            repository.set_active_status(user.id.get(), false, Some(user.display_name()))?;
-            println!("{} left", user.display_name());
-            tx.commit()?;
+            let conn = framework.user_data.connection.lock().await;
+            let mut tx = conn.begin().await?;
+            {
+                let mut repository = PostgresCharacterStatisticsRepository::new();
+                repository
+                    .set_active_status(&mut tx, user.id.get(), false, Some(user.display_name()))
+                    .await?;
+                println!("{} left", user.display_name());
+            }
+            tx.commit().await?;
         }
         serenity::FullEvent::Message { new_message } => {
             let result = QuizRoles::handle_quiz_roles(ctx, new_message, framework.user_data).await;
@@ -186,11 +190,14 @@ async fn refresh_active_users(
 ) -> Result<(), Error> {
     println!("Reloading active users...");
     let should_refresh = {
-        let mut conn = user_data.connection.lock().unwrap();
-        let tx = conn.transaction()?;
-        let repository = SQLiteMetadataRepository::new(&tx);
-        let last_refresh = repository.get_last_active_status_refresh()?;
-        tx.commit()?;
+        let conn = user_data.connection.lock().await;
+        let mut tx = conn.begin().await?;
+        let last_refresh = {
+            let mut repository = PostgresMetadataRepository::new();
+            repository.get_last_active_status_refresh(&mut tx).await?
+        };
+        tx.commit().await?;
+
         match last_refresh {
             None => true,
             Some(last_refresh) => {
@@ -218,13 +225,15 @@ async fn refresh_active_users(
         }
     }
 
-    let mut conn = user_data.connection.lock().unwrap();
-    let tx = conn.transaction()?;
-    let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
+    let conn = user_data.connection.lock().await;
+    let mut tx = conn.begin().await?;
+    let mut repository = PostgresCharacterStatisticsRepository::new();
 
     let mut page_number = 0;
     loop {
-        let users = repository.get_paginated_users_by_id(page_number)?;
+        let users = repository
+            .get_paginated_users_by_id(&mut tx, page_number)
+            .await?;
         if users.is_empty() {
             break;
         }
@@ -234,96 +243,67 @@ async fn refresh_active_users(
                 None => None,
                 Some(member) => Some(member.user.display_name()),
             };
-            repository.set_active_status(u.get_user_id(), member.is_some(), name)?;
+            repository
+                .set_active_status(&mut tx, u.get_user_id(), member.is_some(), name)
+                .await?;
         }
         page_number += 1;
     }
 
-    let mut metadata_repository = SQLiteMetadataRepository::new(&tx);
-    metadata_repository.set_last_active_status_refresh(Utc::now())?;
-
-    tx.commit()?;
+    let mut tx = conn.begin().await?;
+    let mut metadata_repository = PostgresMetadataRepository::new();
+    metadata_repository
+        .set_last_active_status_refresh(&mut tx, Utc::now())
+        .await?;
     println!("Done reloading active users");
     Ok(())
 }
 
-fn setup_sqlite_connection() -> rusqlite::Result<Connection> {
-    let connection = Connection::open("./perdition.db")?;
+async fn setup_postgres_connection() -> Result<PgPool, sqlx::Error> {
+    let token: String = var("DATABASE_URL").expect("Missing `POSTGRES_TOKEN` env var.");
+    let client = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&token)
+        .await?;
 
-    // Setup migration
-    connection.execute(
-        "
--- Create the CharacterStatistics table
-CREATE TABLE IF NOT EXISTS CharacterStatistics (
-    user_id INTEGER PRIMARY KEY, -- the discord id of the user
+    client
+        .execute(
+            r#"
+    -- Create the CharacterStatistics table
+CREATE TABLE IF NOT EXISTS immersion_bot."CharacterStatistics" (
+    user_id BIGINT PRIMARY KEY, -- the discord id of the user
     total_characters INTEGER NOT NULL,
-    is_active INTEGER NOT NULL DEFAULT 1, -- 1 = TRUE, 0 = FALSE
-    name TEXT NOT NULL DEFAULT 'UNKNOWN'
-);    
-    ",
-        (),
-    )?;
-
-    connection.execute(
-        "
--- Create the CharacterLogEntry table
-CREATE TABLE IF NOT EXISTS CharacterLogEntry (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL, -- Foreign key linking to CharacterStatistics
-    characters INTEGER NOT NULL,
-    time INTEGER NOT NULL, -- Store timestamp as Unix timestamp (64bits in SQLite)
-    notes TEXT, -- Optional field for notes
-    FOREIGN KEY (user_id) REFERENCES CharacterStatistics (user_id)
+    is_active BOOLEAN NOT NULL DEFAULT TRUE, -- 1 = TRUE, 0 = FALSE
+    name TEXT NOT NULL DEFAULT 'UNKNOWN'    
 );
-    ",
-        (),
-    )?;
 
-    // Setup migration
-    connection.execute(
-        "
-CREATE TABLE IF NOT EXISTS Metadata (
-    last_active_status_refresh INTEGER NOT NULL
-);    
-        ",
-        (),
-    )?;
+-- Create the CharacterLogEntry table
+CREATE TABLE IF NOT EXISTS immersion_bot."CharacterLogEntry" (
+    id SERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL, -- Foreign key linking to CharacterStatistics
+    characters INTEGER NOT NULL,
+    time BIGINT NOT NULL, -- Store timestamp as Unix timestamp (64bits in SQLite)
+    notes TEXT, -- Optional field for notes
+    FOREIGN KEY (user_id) REFERENCES immersion_bot."CharacterStatistics" (user_id)
+);
 
-    Ok(connection)
+-- Create the Metadata table
+CREATE TABLE IF NOT EXISTS immersion_bot."Metadata" (
+    last_active_status_refresh BIGINT NOT NULL
+);"#,
+        )
+        .await?;
+
+    Ok(client)
 }
 
 #[tokio::main]
 async fn main() {
     dotenv().ok();
 
-    let mut connection = setup_sqlite_connection().expect("Failed to open an SQLite connection!");
+    // let mut connection = setup_sqlite_connection().expect("Failed to open an SQLite connection!");
+    let connection = setup_postgres_connection().await.unwrap();
     let http_client = Client::new();
-
-    // migrate old json data (if needed)
-    let args: Vec<String> = env::args().collect();
-    if args.len() > 2 && args[1] == "--migrate" {
-        let path = &args[2];
-        println!("Migrating file: {}", path);
-        let result = handle_migrate(&mut connection, path);
-        match result {
-            Err(error) => {
-                println!("Failed to migrate json data: {error}");
-            }
-            _ => (),
-        };
-
-        // after successful migration, we need to refresh active users
-        let transaction = connection
-            .transaction()
-            .expect("Unable to refresh active users after migration");
-        let mut repo = SQLiteMetadataRepository::new(&transaction);
-        let time = Utc
-            .timestamp_opt(0, 0)
-            .single()
-            .expect("Date conversion error in migration");
-        repo.set_last_active_status_refresh(time).unwrap();
-        transaction.commit().unwrap();
-    }
 
     let data = Data {
         connection: Mutex::new(connection),
@@ -332,7 +312,10 @@ async fn main() {
     setup_discord_bot(data).await
 }
 
-fn handle_migrate(connection: &mut Connection, path: &str) -> Result<(), Error> {
-    let old_data = get_json_data(path)?;
-    migrate(connection, old_data)
-}
+// fn handle_migrate(
+//     connection: &mut Box<dyn CharacterStatisticsRepository + '_>,
+//     path: &str,
+// ) -> Result<(), Error> {
+//     let old_data = get_json_data(path)?;
+//     migrate(connection, old_data)
+// }

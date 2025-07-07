@@ -22,6 +22,51 @@ impl<'conn> SQLiteMetadataRepository<'conn> {
     }
 }
 
+pub fn setup_sqlite_connection() -> rusqlite::Result<Connection> {
+    let connection = Connection::open("./perdition.db")?;
+
+    // Setup migration
+    connection.execute(
+        "
+-- Create the CharacterStatistics table
+CREATE TABLE IF NOT EXISTS CharacterStatistics (
+    user_id INTEGER PRIMARY KEY, -- the discord id of the user
+    total_characters INTEGER NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1, -- 1 = TRUE, 0 = FALSE
+    name TEXT NOT NULL DEFAULT 'UNKNOWN'
+);    
+    ",
+        (),
+    )?;
+
+    connection.execute(
+        "
+-- Create the CharacterLogEntry table
+CREATE TABLE IF NOT EXISTS CharacterLogEntry (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL, -- Foreign key linking to CharacterStatistics
+    characters INTEGER NOT NULL,
+    time INTEGER NOT NULL, -- Store timestamp as Unix timestamp (64bits in SQLite)
+    notes TEXT, -- Optional field for notes
+    FOREIGN KEY (user_id) REFERENCES CharacterStatistics (user_id)
+);
+    ",
+        (),
+    )?;
+
+    // Setup migration
+    connection.execute(
+        "
+CREATE TABLE IF NOT EXISTS Metadata (
+    last_active_status_refresh INTEGER NOT NULL
+);    
+        ",
+        (),
+    )?;
+
+    Ok(connection)
+}
+
 impl MetadataRepository for SQLiteMetadataRepository<'_> {
     fn get_last_active_status_refresh(&self) -> Result<Option<DateTime<Utc>>, Error> {
         let mut stmt = self.transaction.prepare(

@@ -5,7 +5,9 @@ use serenity::all::{ChannelId, Color, CreateEmbed, CreateEmbedFooter, UserId};
 
 use crate::{
     constants::{CONGRATULATE_NEW_ROLE_CHANNEL_IDS, LEADERBOARD_PAGE_SIZE, LOG_ENTRY_PAGE_SIZE},
-    repository::{sqlite_db::SQLiteCharacterStatisticsRepository, CharacterStatisticsRepository},
+    repository::{
+        self, postgres_db::PostgresCharacterStatisticsRepository, CharacterStatisticsRepository,
+    },
     roles::{Roles, UserRoles},
     utils::format_with_commas,
     Context, Error,
@@ -40,18 +42,21 @@ pub async fn log_characters(
     #[description = "The amount of characters read"] characters: i32,
     #[description = "Extra information such as the title of the book or VN"] notes: Option<String>,
 ) -> Result<(), Error> {
+    let user_id = ctx.author().id.get().clone();
+    let name = ctx.author().display_name().to_owned();
+    let time = ctx.created_at().timestamp();
+
     let (data, rank) = {
-        let mut connection = ctx.data().connection.lock().unwrap();
-        let tx = connection.transaction().map_err(|e| e.to_string())?;
-        let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
+        let connection = ctx.data().connection.lock().await;
+        let mut tx = connection.begin().await?;
 
-        let user_id = ctx.author().id;
-        let name = ctx.author().display_name();
+        let mut repository = PostgresCharacterStatisticsRepository::new();
+        let data = repository
+            .add_log_entry(&mut tx, user_id, &name, characters, time, notes)
+            .await?;
+        let rank = repository.get_rank(&mut tx, &data).await?;
 
-        let time = &ctx.created_at();
-        let data = repository.add_log_entry(user_id.get(), name, characters, time, notes)?;
-        let rank = repository.get_rank(&data)?;
-        tx.commit()?;
+        tx.commit().await?;
 
         (data, rank)
     };
@@ -129,15 +134,18 @@ pub async fn edit_characters(
     #[description = "Extra information such as the title of the book or VN"] notes: Option<String>,
 ) -> Result<(), Error> {
     let name = user_id.to_user(ctx).await?.display_name().to_owned();
-    let (data, rank) = {
-        let mut connection = ctx.data().connection.lock().unwrap();
-        let tx = connection.transaction().map_err(|e| e.to_string())?;
-        let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
+    let time = ctx.created_at().timestamp();
 
-        let time = &ctx.created_at();
-        let data = repository.add_log_entry(user_id.get(), &name, characters, time, notes)?;
-        let rank = repository.get_rank(&data)?;
-        tx.commit()?;
+    let (data, rank) = {
+        let connection = ctx.data().connection.lock().await;
+        let mut tx = connection.begin().await?;
+        let mut repository = PostgresCharacterStatisticsRepository::new();
+
+        let data = repository
+            .add_log_entry(&mut tx, user_id.get(), &name, characters, time, notes)
+            .await?;
+        let rank = repository.get_rank(&mut tx, &data).await?;
+        tx.commit().await?;
 
         (data, rank)
     };
@@ -266,13 +274,15 @@ async fn make_history_embed_by_page(
     user_id: u64,
 ) -> Result<CreateEmbed, Error> {
     let (log_entries, total_count) = {
-        let mut connection = ctx.data().connection.lock().unwrap();
-        let tx = connection.transaction().map_err(|e| e.to_string())?;
-        let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
+        let connection = ctx.data().connection.lock().await;
+        let mut tx = connection.begin().await?;
+        let mut repository = PostgresCharacterStatisticsRepository::new();
 
-        let entries = repository.get_paginated_log_entries_by_time(user_id, page)?;
-        let total_entry_count = repository.get_total_log_entries(user_id)?;
-        tx.commit()?;
+        let entries = repository
+            .get_paginated_log_entries_by_time(&mut tx, user_id, page)
+            .await?;
+        let total_entry_count = repository.get_total_log_entries(&mut tx, user_id).await?;
+        tx.commit().await?;
 
         (entries, total_entry_count)
     };
@@ -308,11 +318,14 @@ pub async fn history(
     #[description = "The user you want to check"] user: Option<UserId>,
 ) -> Result<(), Error> {
     let user_id = user.unwrap_or_else(|| ctx.author().id).get();
+
     let exists = {
-        let mut connection = ctx.data().connection.lock().unwrap();
-        let tx = connection.transaction()?;
-        let repository = SQLiteCharacterStatisticsRepository::new(&tx);
-        repository.exists(user_id)?
+        let connection = ctx.data().connection.lock().await;
+        let mut tx = connection.begin().await?;
+        let mut repository = PostgresCharacterStatisticsRepository::new();
+        let exists = repository.exists(&mut tx, user_id).await?;
+        tx.commit().await?;
+        exists
     };
 
     if !exists {
@@ -323,13 +336,11 @@ pub async fn history(
     }
 
     let length = {
-        let mut connection = ctx.data().connection.lock().unwrap();
-        let tx = connection.transaction().map_err(|e| e.to_string())?;
-        let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
-
-        let entries = repository.get_total_log_entries(user_id)?;
-        tx.commit()?;
-
+        let connection = ctx.data().connection.lock().await;
+        let mut tx = connection.begin().await?;
+        let mut repository = PostgresCharacterStatisticsRepository::new();
+        let entries = repository.get_total_log_entries(&mut tx, user_id).await?;
+        tx.commit().await?;
         entries.div_ceil(LOG_ENTRY_PAGE_SIZE)
     };
 
@@ -347,16 +358,21 @@ async fn make_leaderboard_embed_by_page(
     let user_name = custom_context_data.1.as_str();
     let start = Instant::now();
     let (users, rank, users_count, stats) = {
-        let mut connection = ctx.data().connection.lock().unwrap();
-        let tx = connection.transaction().map_err(|e| e.to_string())?;
-        let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
+        let connection = ctx.data().connection.lock().await;
+        let mut tx = connection.begin().await?;
+        let mut repository = PostgresCharacterStatisticsRepository::new();
 
-        let users = repository.get_paginated_active_users_by_characters(page)?;
-        let stats = repository.get_or_initialize_statistics(user_id, user_name)?;
-        let rank = repository.get_rank(&stats)?;
+        let users = repository
+            .get_paginated_active_users_by_characters(&mut tx, page)
+            .await?;
+        let stats = repository
+            .get_or_initialize_statistics(&mut tx, user_id, user_name)
+            .await?;
+        let rank = repository.get_rank(&mut tx, &stats).await?;
+        let users_count = repository.get_total_active_users(&mut tx).await?;
 
-        let users_count = repository.get_total_active_users()?;
-        tx.commit()?;
+        tx.commit().await?;
+
         (users, rank, users_count, stats)
     };
 
@@ -434,10 +450,12 @@ pub async fn rank(
     };
 
     let exists = {
-        let mut connection = ctx.data().connection.lock().unwrap();
-        let tx = connection.transaction()?;
-        let repository = SQLiteCharacterStatisticsRepository::new(&tx);
-        repository.exists(user_id)?
+        let connection = ctx.data().connection.lock().await;
+        let mut tx = connection.begin().await?;
+        let mut repository = PostgresCharacterStatisticsRepository::new();
+        let exists = repository.exists(&mut tx, user_id).await?;
+        tx.commit().await?;
+        exists
     };
 
     if !exists {
@@ -448,14 +466,16 @@ pub async fn rank(
     }
 
     let (total_pages, my_page) = {
-        let mut connection = ctx.data().connection.lock().unwrap();
-        let tx = connection.transaction().map_err(|e| e.to_string())?;
-        let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
+        let connection = ctx.data().connection.lock().await;
+        let mut tx = connection.begin().await?;
+        let mut repository = PostgresCharacterStatisticsRepository::new();
 
-        let users_count = repository.get_total_active_users()?;
-        let stats = repository.get_or_initialize_statistics(user_id, &display_name)?;
-        let rank: u64 = repository.get_rank(&stats)?.try_into()?;
-        tx.commit()?;
+        let users_count = repository.get_total_active_users(&mut tx).await?;
+        let stats = repository
+            .get_or_initialize_statistics(&mut tx, user_id, &display_name)
+            .await?;
+        let rank: u64 = repository.get_rank(&mut tx, &stats).await?.try_into()?;
+        tx.commit().await?;
 
         let pages = users_count.div_ceil(LEADERBOARD_PAGE_SIZE);
         let my_page = rank.div_ceil(LEADERBOARD_PAGE_SIZE) - 1;
@@ -478,12 +498,11 @@ pub async fn rank(
 #[poise::command(slash_command)]
 pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
     let total_pages = {
-        let mut connection = ctx.data().connection.lock().unwrap();
-        let tx = connection.transaction().map_err(|e| e.to_string())?;
-        let mut repository = SQLiteCharacterStatisticsRepository::new(&tx);
-
-        let users_count = repository.get_total_active_users()?;
-        tx.commit()?;
+        let connection = ctx.data().connection.lock().await;
+        let mut tx = connection.begin().await?;
+        let mut repository = PostgresCharacterStatisticsRepository::new();
+        let users_count = repository.get_total_active_users(&mut tx).await?;
+        tx.commit().await?;
 
         users_count.div_ceil(LEADERBOARD_PAGE_SIZE)
     };

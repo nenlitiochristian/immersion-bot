@@ -1,19 +1,18 @@
-use std::sync::Mutex;
-
 use reqwest::Client;
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serenity::all::Timestamp;
+use sqlx::PgPool;
+use tokio::sync::Mutex;
 
 // Custom user data passed to all command functions
 pub struct Data {
-    /// connection to sqlite for db
-    pub connection: Mutex<Connection>,
+    /// connection to postgres for db
+    pub connection: Mutex<PgPool>,
     /// needed to make calls to the kotoba API for quizzes
     pub http_client: Client,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct CharacterStatistics {
     user_id: u64,
     pub name: String,
