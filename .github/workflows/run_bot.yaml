@@ -2,7 +2,7 @@ name: Run Bot
 
 concurrency:
   group: run-bot
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions: write-all
 
@@ -11,7 +11,7 @@ on:
     branches:
       - main
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '0 */4 * * *'
 
 env:
   DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
