@@ -51,13 +51,19 @@ jobs:
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
 
+          # Save the updated perdition.db before switching branches
+          cp perdition.db /tmp/perdition.db
+
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
           git fetch origin ci-results
 
-          # Checkout ci-results and keep the current perdition.db
+          # Reset local ci-results to match the remote
           git checkout -B ci-results origin/ci-results
 
-          # Restore perdition.db from the working directory
-          git restore --source=main --staged --worktree perdition.db
+          # Restore the latest perdition.db
+          cp /tmp/perdition.db perdition.db
 
           git add perdition.db
           git commit -m "Save perdition.db from CI run: $GITHUB_RUN_ID" || echo "No changes to commit"
