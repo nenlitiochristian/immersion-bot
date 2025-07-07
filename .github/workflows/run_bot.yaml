@@ -12,6 +12,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Make sure env vars are set up properly
+      - run: echo "DATABASE_URL=$DATABASE_URL"
+
       - name: Clone repo
         uses: actions/checkout@v4
 
