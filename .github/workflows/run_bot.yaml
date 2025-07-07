@@ -51,10 +51,20 @@ jobs:
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
 
-          # Ensure latest main branch and updated perdition.db are ready
-          git checkout -B ci-results
+          git fetch origin ci-results
+
+          # Checkout ci-results and keep the current perdition.db
+          git checkout -B ci-results origin/ci-results
+
+          # Restore perdition.db from the working directory
+          git restore --source=main --staged --worktree perdition.db
+
           git add perdition.db
           git commit -m "Save perdition.db from CI run: $GITHUB_RUN_ID" || echo "No changes to commit"
+
           git push origin ci-results
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
