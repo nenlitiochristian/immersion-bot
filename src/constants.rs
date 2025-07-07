@@ -39,18 +39,18 @@ pub static QUIZ_REQUIREMENTS: LazyLock<Vec<QuizRequirement>> = LazyLock::new(|| 
         },
         QuizRequirement {
             quiz_role: QuizRoles::Quiz4,
-            score_limit: 30,
+            score_limit: 1,
             max_missed_questions: 4,
             unique_ids: vec![
                 "2bef521f-512c-490d-924d-b00086c10f2d".to_string(),
                 "animals".to_string(),
-                "birds".to_string(),
                 "bugs".to_string(),
-                "countries".to_string(),
                 "fish".to_string(),
                 "plants".to_string(),
+                "birds".to_string(),
                 "vegetables".to_string(),
                 "yojijukugo".to_string(),
+                "countries".to_string(),
             ],
         },
         QuizRequirement {
