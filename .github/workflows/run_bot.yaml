@@ -10,6 +10,9 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
+    env: 
+      DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
     steps:
       - name: Make sure env vars are set up properly
@@ -28,7 +31,3 @@ jobs:
 
       - name: Run the app
         run: cargo run
-
-env: 
-  DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-  DATABASE_URL: ${{ secrets.DATABASE_URL }}
