@@ -1,0 +1,58 @@
+name: Run Bot
+
+concurrency:
+  group: run-bot
+  cancel-in-progress: false
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 */6 * * *'
+
+env:
+  DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  TEST: Hello
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Show env vars
+        run: echo "VARS - $DISCORD_TOKEN - $DATABASE_URL - $TEST"
+
+      - name: Clone repo
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Create .env file
+        run: |
+          echo "DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}" >> .env
+          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> .env
+
+      - name: Restore perdition.db from ci-results branch
+        run: |
+          git fetch origin ci-results
+          git checkout origin/ci-results -- perdition.db || echo "No existing perdition.db found"
+
+      - name: Run the app
+        run: cargo run
+
+      - name: Commit and Push perdition.db
+        if: always()
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+          # Ensure latest main branch and updated perdition.db are ready
+          git checkout -B ci-results
+          git add perdition.db
+          git commit -m "Save perdition.db from CI run: $GITHUB_RUN_ID" || echo "No changes to commit"
+          git push origin ci-results
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
