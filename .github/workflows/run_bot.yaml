@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: Make sure env vars are set up properly
-        run: echo "DATABASE_URL=$DATABASE_URL"
+        run: echo "VARS - $DISCORD_TOKEN - $DATABASE_URL"
 
       - name: Clone repo
         uses: actions/checkout@v4
