@@ -1,5 +1,0 @@
-/target
-*.env
-/private/* 
-perdition.db
-Data.json
