@@ -1555,10 +1555,7 @@ INSERT INTO CharacterLogEntry VALUES(1432,754551534523646032,7301,1786670570,'na
 CREATE TABLE Metadata (
     last_active_status_refresh INTEGER NOT NULL
 );
-INSERT INTO Metadata VALUES(1786797757);
-PRAGMA writable_schema=ON;
-CREATE TABLE IF NOT EXISTS sqlite_sequence(name,seq);
+INSERT INTO Metadata VALUES(1786807664);
 DELETE FROM sqlite_sequence;
 INSERT INTO sqlite_sequence VALUES('CharacterLogEntry',1432);
-PRAGMA writable_schema=OFF;
 COMMIT;
